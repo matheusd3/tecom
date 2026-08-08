@@ -10,12 +10,14 @@ import {
   RepairOrder,
   Sale,
   ServiceType,
+  ShiftReport,
 } from "./types";
 
 const MONTH_SECONDS = 14_400; // 30 dias de jogo, com 1 dia = 8 minutos
 const CUSTOMER_PATIENCE_PER_SECOND = 0.38;
 const CUSTOMER_SPAWN_MIN_SECONDS = 7;
 const CUSTOMER_SPAWN_MAX_SECONDS = 15;
+const SHIFT_DURATION = 120;
 
 export class GameWorld {
   private state: GameState;
@@ -25,16 +27,24 @@ export class GameWorld {
   private opportunityCheckTimer = 0;
   private lastPayrollMonth = 0;
   private lastOpportunityAt = new Map<string, number>();
+  private shiftStartRevenue = 0;
+  private shiftStartExpenses = 0;
+  private shiftStartSales = 0;
+  private shiftStartRepairs = 0;
+  private shiftStartMissed = 0;
+  private shiftStartReputation = 60;
+  private shiftReport: ShiftReport | null = null;
 
   constructor() {
     this.state = this.createInitialState();
   }
 
   public update(deltaTime: number): void {
-    if (this.state.isPaused || deltaTime <= 0) return;
+    if (this.state.phase !== "active" || this.state.isPaused || deltaTime <= 0) return;
 
     const elapsed = Math.min(deltaTime, 2) * this.state.timeSpeed;
     this.state.time += elapsed;
+    this.state.shiftTimeRemaining = Math.max(0, this.state.shiftTimeRemaining - elapsed);
     this.releaseFinishedEmployees();
     this.updateWaitingCustomers(elapsed);
     this.generateCustomers(elapsed);
@@ -49,6 +59,7 @@ export class GameWorld {
       this.opportunityCheckTimer = 0;
       this.analyzeOpportunities();
     }
+    if (this.state.shiftTimeRemaining === 0) this.finishShift();
   }
 
   public getState(): GameState {
@@ -68,7 +79,41 @@ export class GameWorld {
   }
 
   public togglePause(): void {
+    if (this.state.phase !== "active") {
+      this.startShift();
+      return;
+    }
     this.state.isPaused = !this.state.isPaused;
+  }
+
+  public startShift(): ActionResult {
+    if (this.state.phase === "active") {
+      this.state.isPaused = false;
+      return { ok: true, message: "Turno retomado." };
+    }
+    this.state.phase = "active";
+    this.state.isPaused = false;
+    this.state.shiftTimeRemaining = SHIFT_DURATION;
+    this.state.selectedCustomerId = undefined;
+    this.shiftStartRevenue = this.state.totalRevenue;
+    this.shiftStartExpenses = this.state.totalExpenses;
+    this.shiftStartSales = this.state.sales.length;
+    this.shiftStartRepairs = this.state.repairs.filter((repair) => repair.completed).length;
+    this.shiftStartMissed = this.state.missedSales + this.state.missedRepairs;
+    this.shiftStartReputation = this.state.reputation;
+    this.shiftReport = null;
+    return { ok: true, message: `Turno ${this.state.day} iniciado.` };
+  }
+
+  public selectCustomer(customerId: string): ActionResult {
+    const customer = this.state.customers.get(customerId);
+    if (!customer || customer.status !== "waiting") return { ok: false, message: "Cliente não está mais na fila." };
+    this.state.selectedCustomerId = customerId;
+    return { ok: true, message: `${customer.name} foi priorizado.` };
+  }
+
+  public getShiftReport(): ShiftReport | null {
+    return this.shiftReport;
   }
 
   public hireEmployee(role: EmployeeRole, name: string): boolean {
@@ -208,7 +253,9 @@ export class GameWorld {
     employees.set("tech-1", { id: "tech-1", name: "Maria Técnica", role: "technician", salary: 2_500, skill: 70, happiness: 78, isBusy: false, busyUntil: 0 });
 
     return {
-      time: 0, timeSpeed: 1, isPaused: false, cash: 10_000,
+      time: 0, timeSpeed: 1, isPaused: true, phase: "planning", day: 1,
+      shiftDuration: SHIFT_DURATION, shiftTimeRemaining: SHIFT_DURATION, dailyGoal: 900, reputation: 60,
+      cash: 10_000,
       totalRevenue: 0, totalExpenses: 0, monthlyRevenue: 0, monthlyExpenses: 0,
       products, employees, customers: new Map(), sales: [], repairs: [],
       missedSales: 0, missedRepairs: 0, idleEmployeeTime: 0,
@@ -217,7 +264,7 @@ export class GameWorld {
   }
 
   private generateCustomers(elapsed: number): void {
-    if (Array.from(this.state.customers.values()).some((customer) => customer.status === "waiting")) return;
+    if (Array.from(this.state.customers.values()).filter((customer) => customer.status === "waiting").length >= 3) return;
     this.customerSpawnTimer += elapsed;
     if (this.customerSpawnTimer < this.nextCustomerSpawn) return;
     this.customerSpawnTimer = 0;
@@ -237,10 +284,10 @@ export class GameWorld {
       budget: wantsProduct
         ? Math.round(product.sellingPrice * this.randomBetween(0.78, 1.18) * 100) / 100
         : 0,
-      patience: 100, arrivalTime: this.state.time, status: "waiting",
+      patience: this.randomBetween(55, 100), arrivalTime: this.state.time, status: "waiting",
+      urgency: Math.random() < 0.22 ? "high" : Math.random() < 0.55 ? "medium" : "low",
+      story: wantsProduct ? this.productStory(type) : this.repairStory(),
     });
-    // Cada chegada é uma decisão. A loja aguarda o jogador em vez de agir sozinha.
-    this.state.isPaused = true;
   }
 
   private updateWaitingCustomers(elapsed: number): void {
@@ -294,6 +341,26 @@ export class GameWorld {
     for (const [id, customer] of this.state.customers) {
       if (customer.status === "leaving" && customer.departureTime && customer.departureTime <= this.state.time) this.state.customers.delete(id);
     }
+  }
+
+  private finishShift(): void {
+    this.analyzeOpportunities();
+    const revenue = this.state.totalRevenue - this.shiftStartRevenue;
+    const profit = revenue - (this.state.totalExpenses - this.shiftStartExpenses);
+    const sales = this.state.sales.length - this.shiftStartSales;
+    const repairs = this.state.repairs.filter((repair) => repair.completed).length - this.shiftStartRepairs;
+    const customersLost = this.state.missedSales + this.state.missedRepairs - this.shiftStartMissed;
+    const goalReached = revenue >= this.state.dailyGoal;
+    if (goalReached) this.state.reputation = Math.min(100, this.state.reputation + 5);
+    this.shiftReport = {
+      day: this.state.day, goal: this.state.dailyGoal, revenue, profit, sales, repairs, customersLost,
+      reputationChange: this.state.reputation - this.shiftStartReputation,
+      goalReached, topOpportunity: this.opportunities[0],
+    };
+    this.state.phase = "summary";
+    this.state.isPaused = true;
+    this.state.day++;
+    this.state.dailyGoal = 900 + (this.state.day - 1) * 180;
   }
 
   private processPayroll(): void {
@@ -380,5 +447,25 @@ export class GameWorld {
 
   private randomBetween(min: number, max: number): number {
     return min + Math.random() * (max - min);
+  }
+
+  private productStory(type: ProductType): string {
+    const stories: Record<ProductType, string[]> = {
+      notebook: ["Preciso trabalhar hoje à noite.", "Meu computador morreu antes da faculdade."],
+      mouse: ["Quero melhorar meu setup sem gastar demais."],
+      keyboard: ["Vou começar no emprego novo amanhã."],
+      monitor: ["Preciso de mais espaço para editar vídeos."],
+      headset: ["Tenho campeonato online hoje."],
+      webcam: ["Tenho uma entrevista por vídeo em uma hora."],
+      ssd: ["Meu PC está travando com arquivos do trabalho."],
+      ram: ["Quero deixar meu computador mais rápido."],
+    };
+    const options = stories[type];
+    return options[Math.floor(Math.random() * options.length)];
+  }
+
+  private repairStory(): string {
+    const stories = ["O notebook não liga e tenho uma entrega urgente.", "Derrubei água no teclado ontem.", "Meu computador faz um barulho estranho desde cedo."];
+    return stories[Math.floor(Math.random() * stories.length)];
   }
 }

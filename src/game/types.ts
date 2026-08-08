@@ -4,6 +4,7 @@ export type ProductType = "notebook" | "mouse" | "keyboard" | "monitor" | "heads
 export type ServiceType = "diagnosis" | "repair" | "upgrade" | "cleaning";
 export type EmployeeRole = "seller" | "technician" | "manager";
 export type CustomerStatus = "waiting" | "beingServed" | "repairing" | "leaving";
+export type GamePhase = "planning" | "active" | "summary";
 
 export interface Product {
   id: string;
@@ -50,6 +51,8 @@ export interface Customer {
   arrivalTime: number;
   departureTime?: number;
   status: CustomerStatus;
+  story: string;
+  urgency: "low" | "medium" | "high";
 }
 
 export interface Sale {
@@ -80,6 +83,13 @@ export interface GameState {
   time: number;
   timeSpeed: number;
   isPaused: boolean;
+  phase: GamePhase;
+  day: number;
+  shiftDuration: number;
+  shiftTimeRemaining: number;
+  dailyGoal: number;
+  reputation: number;
+  selectedCustomerId?: string;
   cash: number;
   totalRevenue: number;
   totalExpenses: number;
@@ -111,6 +121,19 @@ export interface Opportunity {
 export interface ActionResult {
   ok: boolean;
   message: string;
+}
+
+export interface ShiftReport {
+  day: number;
+  goal: number;
+  revenue: number;
+  profit: number;
+  sales: number;
+  repairs: number;
+  customersLost: number;
+  reputationChange: number;
+  goalReached: boolean;
+  topOpportunity?: Opportunity;
 }
 
 export interface GameHandle {
