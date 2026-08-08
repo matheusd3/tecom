@@ -19,6 +19,9 @@ interface GameUIProps {
   onBuyStock: (tipo: ProductType, quantidade: number) => boolean;
   onSetPrice: (tipo: ProductType, preco: number) => boolean;
   onHire: (funcao: EmployeeRole, nome: string) => boolean;
+  onSellToCustomer: (clienteId: string, preco: number) => { ok: boolean; message: string };
+  onAcceptRepair: (clienteId: string) => { ok: boolean; message: string };
+  onDeclineCustomer: (clienteId: string) => { ok: boolean; message: string };
   onClearOpportunities: () => void;
   onReset: () => void;
 }
@@ -118,6 +121,9 @@ export function GameUI({
   onBuyStock,
   onSetPrice,
   onHire,
+  onSellToCustomer,
+  onAcceptRepair,
+  onDeclineCustomer,
   onClearOpportunities,
   onReset,
 }: GameUIProps) {
@@ -170,6 +176,7 @@ export function GameUI({
   const aguardandoReparo = naLoja.filter(
     (c) => c.status === "waiting" && c.needsService
   ).length;
+  const clientePendente = naLoja.find((c) => c.status === "waiting");
 
   const reparosAbertos = gameState.repairs.filter((r) => !r.completed);
   const reparosConcluidos = gameState.repairs.filter((r) => r.completed);
@@ -237,6 +244,10 @@ export function GameUI({
     setAviso({ texto: "Jogo reiniciado.", tipo: "ok" });
   };
 
+  const registrarResultado = (resultado: { ok: boolean; message: string }) => {
+    setAviso({ texto: resultado.message, tipo: resultado.ok ? "ok" : "erro" });
+  };
+
   return (
     <div className="ui-root">
       {/* ---------- Barra superior ---------- */}
@@ -294,6 +305,28 @@ export function GameUI({
           ))}
         </div>
       </header>
+
+      {/* Cada chegada exige uma decisão. O relógio pausa até o jogador escolher. */}
+      <main className="mesa-atendimento">
+        {clientePendente ? (
+          <AtendimentoCard
+            cliente={clientePendente}
+            produto={
+              clientePendente.needsProduct
+                ? gameState.products.get(clientePendente.needsProduct)
+                : undefined
+            }
+            onSell={(preco) => registrarResultado(onSellToCustomer(clientePendente.id, preco))}
+            onAcceptRepair={() => registrarResultado(onAcceptRepair(clientePendente.id))}
+            onDecline={() => registrarResultado(onDeclineCustomer(clientePendente.id))}
+          />
+        ) : (
+          <div className="mesa-atendimento__vazia">
+            <strong>{gameState.isPaused ? "Tudo resolvido." : "Loja aberta."}</strong>
+            <span>{gameState.isPaused ? "Retome o relógio para receber o próximo cliente." : "Aguardando o próximo cliente."}</span>
+          </div>
+        )}
+      </main>
 
       {/* ---------- Painel esquerdo ---------- */}
       <aside className="painel painel--esquerda">
@@ -720,6 +753,66 @@ export function GameUI({
         </div>
       )}
     </div>
+  );
+}
+
+function AtendimentoCard({
+  cliente,
+  produto,
+  onSell,
+  onAcceptRepair,
+  onDecline,
+}: {
+  cliente: Customer;
+  produto?: { name: string; sellingPrice: number; costPrice: number; stock: number };
+  onSell: (preco: number) => void;
+  onAcceptRepair: () => void;
+  onDecline: () => void;
+}) {
+  const venda = Boolean(cliente.needsProduct && produto);
+  const precoCheio = produto?.sellingPrice ?? 0;
+  const desconto = Math.min(precoCheio, cliente.budget);
+  const podeDarDesconto = venda && desconto < precoCheio && desconto >= (produto?.costPrice ?? Infinity);
+  const podeCobrarCheio = venda && precoCheio <= cliente.budget && (produto?.stock ?? 0) > 0;
+  const semEstoque = venda && (produto?.stock ?? 0) === 0;
+
+  return (
+    <section className="atendimento-card">
+      <p className="atendimento-card__etiqueta">ATENDIMENTO PENDENTE · RELÓGIO PAUSADO</p>
+      <h2>{cliente.name}</h2>
+      {venda ? (
+        <>
+          <p>Quer comprar <strong>{produto?.name}</strong>. Orçamento: <strong>{formatarMoeda(cliente.budget)}</strong>.</p>
+          <div className="atendimento-card__numeros">
+            <span>Preço da vitrine <b>{formatarMoeda(precoCheio)}</b></span>
+            <span>Custo <b>{formatarMoeda(produto?.costPrice ?? 0)}</b></span>
+            <span>Estoque <b>{produto?.stock}</b></span>
+          </div>
+          {semEstoque && <p className="atendimento-card__aviso">Você não tem esse produto em estoque.</p>}
+          {!semEstoque && !podeCobrarCheio && !podeDarDesconto && (
+            <p className="atendimento-card__aviso">O orçamento não cobre nem o custo. Esta venda não é viável.</p>
+          )}
+          <div className="atendimento-card__acoes">
+            <button className="btn btn--ativo" disabled={!podeCobrarCheio} onClick={() => onSell(precoCheio)}>
+              Vender por {formatarMoeda(precoCheio)}
+            </button>
+            <button className="btn" disabled={!podeDarDesconto} onClick={() => onSell(desconto)}>
+              Negociar por {formatarMoeda(desconto)}
+            </button>
+            <button className="btn btn--magenta" onClick={onDecline}>Recusar</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p>Precisa de <strong>reparo</strong>. A decisão é sua: assumir a ordem ou dispensar o cliente.</p>
+          <p className="atendimento-card__detalhe">Valor estimado do serviço varia com a habilidade do técnico disponível.</p>
+          <div className="atendimento-card__acoes">
+            <button className="btn btn--ativo" onClick={onAcceptRepair}>Aceitar reparo</button>
+            <button className="btn btn--magenta" onClick={onDecline}>Recusar</button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

@@ -237,6 +237,115 @@ button {
   border-left: 1px solid var(--borda-magenta);
 }
 
+/* ---------- Mesa de atendimento: o centro da decisão do jogador ---------- */
+
+.mesa-atendimento {
+  position: absolute;
+  top: calc(var(--altura-topo) + 28px);
+  left: calc(var(--largura-esquerda) + 28px);
+  right: calc(var(--largura-direita) + 28px);
+  display: grid;
+  place-items: start center;
+  pointer-events: none;
+}
+
+.mesa-atendimento > * {
+  pointer-events: auto;
+}
+
+.atendimento-card,
+.mesa-atendimento__vazia {
+  width: min(560px, 100%);
+  border: 1px solid var(--magenta);
+  border-radius: 14px;
+  padding: 18px;
+  background: rgba(11, 16, 23, 0.94);
+  box-shadow: 0 0 30px rgba(255, 46, 151, 0.18), 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.atendimento-card__etiqueta {
+  margin: 0 0 8px;
+  color: var(--magenta);
+  font-family: Orbitron, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.atendimento-card h2 {
+  margin: 0 0 10px;
+  color: var(--texto);
+  font-family: Orbitron, monospace;
+  font-size: 20px;
+}
+
+.atendimento-card p {
+  margin: 7px 0;
+  color: var(--texto-fraco);
+  line-height: 1.45;
+}
+
+.atendimento-card strong,
+.atendimento-card b {
+  color: var(--texto);
+}
+
+.atendimento-card__numeros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.atendimento-card__numeros span {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(0, 229, 255, 0.08);
+  border: 1px solid var(--borda);
+  color: var(--texto-fraco);
+  font-size: 11px;
+}
+
+.atendimento-card__numeros b {
+  display: block;
+  margin-top: 2px;
+  color: var(--ciano);
+  font-family: "JetBrains Mono", Consolas, monospace;
+}
+
+.atendimento-card__acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 15px;
+}
+
+.atendimento-card__aviso {
+  color: var(--ambar) !important;
+}
+
+.atendimento-card__detalhe {
+  font-size: 12px;
+}
+
+.mesa-atendimento__vazia {
+  width: auto;
+  border-color: var(--borda);
+  color: var(--texto-fraco);
+  text-align: center;
+  font-size: 12px;
+}
+
+.mesa-atendimento__vazia strong,
+.mesa-atendimento__vazia span {
+  display: block;
+}
+
+.mesa-atendimento__vazia strong {
+  color: var(--ciano);
+  margin-bottom: 4px;
+}
+
 .painel::-webkit-scrollbar {
   width: 8px;
 }
@@ -708,5 +817,11 @@ button {
 
   .topbar__resumo {
     display: none;
+  }
+
+  .mesa-atendimento {
+    top: calc(var(--altura-topo) + 8px);
+    left: 10px;
+    right: 10px;
   }
 }

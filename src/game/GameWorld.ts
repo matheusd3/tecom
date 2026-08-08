@@ -1,4 +1,5 @@
 import {
+  ActionResult,
   Customer,
   Employee,
   EmployeeRole,
@@ -38,7 +39,6 @@ export class GameWorld {
     this.updateWaitingCustomers(elapsed);
     this.generateCustomers(elapsed);
     this.processRepairs();
-    this.serveCustomers();
     this.removeDepartedCustomers();
     this.processPayroll();
     this.updateDemand(elapsed);
@@ -111,6 +111,72 @@ export class GameWorld {
     return true;
   }
 
+  /** Fecha manualmente uma venda. O jogo nunca vende automaticamente. */
+  public sellToCustomer(customerId: string, offeredPrice: number): ActionResult {
+    const customer = this.state.customers.get(customerId);
+    if (!customer?.needsProduct || customer.status !== "waiting") {
+      return { ok: false, message: "Esse cliente não está disponível para atendimento." };
+    }
+    const seller = this.availableEmployee("seller");
+    if (!seller) return { ok: false, message: "Todos os vendedores estão ocupados." };
+    const product = this.state.products.get(customer.needsProduct);
+    if (!product || product.stock <= 0) return { ok: false, message: "O produto está sem estoque." };
+    const price = Math.round(offeredPrice * 100) / 100;
+    if (price < product.costPrice) return { ok: false, message: "Essa oferta fica abaixo do custo." };
+    if (price > customer.budget) return { ok: false, message: "O cliente não aceita esse valor." };
+
+    const serviceDuration = Math.max(3, 10 - seller.skill / 15);
+    seller.isBusy = true;
+    seller.busyUntil = this.state.time + serviceDuration;
+    product.stock--;
+    product.unitsSold++;
+    this.state.sales.push({
+      id: `sale-${Math.floor(this.state.time * 1000)}`, customerId: customer.id,
+      productType: product.type, quantity: 1, price, cost: product.costPrice,
+      profit: price - product.costPrice, timestamp: this.state.time,
+    });
+    this.recordRevenue(price);
+    customer.satisfaction = Math.min(100, 72 + seller.skill / 4 + (price < product.sellingPrice ? 8 : 0));
+    customer.status = "leaving";
+    customer.departureTime = this.state.time + 2;
+    seller.happiness = Math.min(100, seller.happiness + 1);
+    return { ok: true, message: `Venda fechada por R$ ${price.toFixed(2).replace(".", ",")}.` };
+  }
+
+  /** Aceita manualmente uma ordem de serviço para o próximo técnico livre. */
+  public acceptRepair(customerId: string): ActionResult {
+    const customer = this.state.customers.get(customerId);
+    if (!customer?.needsService || customer.status !== "waiting") {
+      return { ok: false, message: "Esse reparo não está disponível." };
+    }
+    const technician = this.availableEmployee("technician");
+    if (!technician) return { ok: false, message: "Todos os técnicos estão ocupados." };
+    const price = 180 + technician.skill * 1.5;
+    const cost = price * 0.2;
+    const duration = Math.max(18, 58 - technician.skill * 0.3);
+    const endTime = this.state.time + duration;
+    this.state.repairs.push({
+      id: `repair-${Math.floor(this.state.time * 1000)}`, customerId: customer.id,
+      serviceType: customer.needsService, technicianId: technician.id, startTime: this.state.time,
+      endTime, price, cost, profit: price - cost, completed: false,
+    });
+    customer.status = "repairing";
+    technician.isBusy = true;
+    technician.busyUntil = endTime;
+    return { ok: true, message: `Ordem aceita: previsão de ${Math.ceil(duration)} s de jogo.` };
+  }
+
+  public declineCustomer(customerId: string): ActionResult {
+    const customer = this.state.customers.get(customerId);
+    if (!customer || customer.status !== "waiting") return { ok: false, message: "Esse cliente não está disponível." };
+    customer.satisfaction = 20;
+    customer.status = "leaving";
+    customer.departureTime = this.state.time + 2;
+    if (customer.needsProduct) this.state.missedSales++;
+    else this.state.missedRepairs++;
+    return { ok: true, message: "Cliente dispensado." };
+  }
+
   public reset(): void {
     this.state = this.createInitialState();
     this.opportunities = [];
@@ -151,6 +217,7 @@ export class GameWorld {
   }
 
   private generateCustomers(elapsed: number): void {
+    if (Array.from(this.state.customers.values()).some((customer) => customer.status === "waiting")) return;
     this.customerSpawnTimer += elapsed;
     if (this.customerSpawnTimer < this.nextCustomerSpawn) return;
     this.customerSpawnTimer = 0;
@@ -166,6 +233,8 @@ export class GameWorld {
       budget: wantsProduct ? this.randomBetween(80, 3_500) : 0,
       patience: 100, arrivalTime: this.state.time, status: "waiting",
     });
+    // Cada chegada é uma decisão. A loja aguarda o jogador em vez de agir sozinha.
+    this.state.isPaused = true;
   }
 
   private updateWaitingCustomers(elapsed: number): void {
@@ -179,39 +248,6 @@ export class GameWorld {
       if (customer.needsProduct) this.state.missedSales++;
       else this.state.missedRepairs++;
     }
-  }
-
-  private serveCustomers(): void {
-    const seller = this.availableEmployee("seller");
-    const customer = Array.from(this.state.customers.values()).find((item) => item.status === "waiting" && item.needsProduct);
-    if (!seller || !customer || !customer.needsProduct) return;
-    const product = this.state.products.get(customer.needsProduct);
-    if (!product || product.stock <= 0) {
-      this.leaveCustomer(customer, "stock");
-      return;
-    }
-    if (product.sellingPrice > customer.budget) {
-      this.leaveCustomer(customer, "price");
-      return;
-    }
-
-    const serviceDuration = Math.max(3, 10 - seller.skill / 15);
-    seller.isBusy = true;
-    seller.busyUntil = this.state.time + serviceDuration;
-    product.stock--;
-    product.unitsSold++;
-    const price = product.sellingPrice;
-    const sale: Sale = {
-      id: `sale-${Math.floor(this.state.time * 1000)}`, customerId: customer.id,
-      productType: product.type, quantity: 1, price, cost: product.costPrice,
-      profit: price - product.costPrice, timestamp: this.state.time,
-    };
-    this.state.sales.push(sale);
-    this.recordRevenue(price);
-    customer.satisfaction = Math.min(100, 75 + seller.skill / 4);
-    customer.status = "leaving";
-    customer.departureTime = this.state.time + 2;
-    seller.happiness = Math.min(100, seller.happiness + 1);
   }
 
   private processRepairs(): void {
@@ -232,24 +268,6 @@ export class GameWorld {
       }
     }
 
-    const technician = this.availableEmployee("technician");
-    const customer = Array.from(this.state.customers.values()).find((item) => item.status === "waiting" && item.needsService);
-    if (!technician || !customer || !customer.needsService) return;
-    const price = 180 + technician.skill * 1.5;
-    const cost = price * 0.2;
-    // O tempo precisa acompanhar o ritmo de chegada em 4x: com a configuração
-    // anterior, um único técnico criava fila antes de o jogador ter tempo de reagir.
-    const duration = Math.max(18, 58 - technician.skill * 0.3);
-    const endTime = this.state.time + duration;
-    const repair: RepairOrder = {
-      id: `repair-${Math.floor(this.state.time * 1000)}`, customerId: customer.id,
-      serviceType: customer.needsService, technicianId: technician.id, startTime: this.state.time,
-      endTime, price, cost, profit: price - cost, completed: false,
-    };
-    this.state.repairs.push(repair);
-    customer.status = "repairing";
-    technician.isBusy = true;
-    technician.busyUntil = endTime;
   }
 
   private releaseFinishedEmployees(): void {

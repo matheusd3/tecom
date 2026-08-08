@@ -155,6 +155,42 @@ export default function GameCanvas() {
     [sincronizar]
   );
 
+  const venderParaCliente = useCallback(
+    (clienteId: string, preco: number) => {
+      const resultado = worldRef.current?.sellToCustomer(clienteId, preco) ?? {
+        ok: false,
+        message: "A simulação ainda não está pronta.",
+      };
+      sincronizar();
+      return resultado;
+    },
+    [sincronizar]
+  );
+
+  const aceitarReparo = useCallback(
+    (clienteId: string) => {
+      const resultado = worldRef.current?.acceptRepair(clienteId) ?? {
+        ok: false,
+        message: "A simulação ainda não está pronta.",
+      };
+      sincronizar();
+      return resultado;
+    },
+    [sincronizar]
+  );
+
+  const dispensarCliente = useCallback(
+    (clienteId: string) => {
+      const resultado = worldRef.current?.declineCustomer(clienteId) ?? {
+        ok: false,
+        message: "A simulação ainda não está pronta.",
+      };
+      sincronizar();
+      return resultado;
+    },
+    [sincronizar]
+  );
+
   const limparOportunidades = useCallback(() => {
     worldRef.current?.clearOpportunities();
     sincronizar();
@@ -185,6 +221,9 @@ export default function GameCanvas() {
           onBuyStock={comprarEstoque}
           onSetPrice={definirPreco}
           onHire={contratar}
+          onSellToCustomer={venderParaCliente}
+          onAcceptRepair={aceitarReparo}
+          onDeclineCustomer={dispensarCliente}
           onClearOpportunities={limparOportunidades}
           onReset={reiniciar}
         />

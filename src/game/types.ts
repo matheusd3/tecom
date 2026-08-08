@@ -108,6 +108,11 @@ export interface Opportunity {
   timestamp: number;
 }
 
+export interface ActionResult {
+  ok: boolean;
+  message: string;
+}
+
 export interface GameHandle {
   scene: any;
   dispose(): void;
