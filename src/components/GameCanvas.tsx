@@ -12,16 +12,65 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { createGameScene, type GameHandle } from "@/game/scene";
 import type { GameWorld } from "@/game/GameWorld";
-import type { GameState, Opportunity, ProductType, EmployeeRole } from "@/game/types";
-import { GameUI } from "./GameUI";
+import type {
+  ActionResult,
+  GameState,
+  Opportunity,
+  ProductType,
+  EmployeeRole,
+  ShiftReport,
+} from "@/game/types";
+import { GameUI, type Capacidades } from "./GameUI";
 
 interface Instantaneo {
   gameState: GameState | null;
   opportunities: Opportunity[];
+  shiftReport: ShiftReport | null;
 }
 
 /** Frequência de sincronização entre a simulação e o React. */
 const INTERVALO_SYNC_MS = 250;
+
+const FALHA_SEM_NUCLEO: ActionResult = {
+  ok: false,
+  message: "Ação indisponível: o núcleo do jogo ainda não expõe esse método.",
+};
+
+// Ponte com os métodos do turno. O contrato está em PHASE2_TASKS.md; enquanto o
+// Codex termina de publicá-los, a interface detecta o que existe em vez de
+// quebrar a compilação. Os casts por `unknown` são propositais: eles continuam
+// válidos qualquer que seja a assinatura final declarada no GameWorld.
+type MetodoSemArgs = (() => unknown) | undefined;
+type MetodoComId = ((id: string) => unknown) | undefined;
+
+function metodo(world: GameWorld, nome: string): unknown {
+  return (world as unknown as Record<string, unknown>)[nome];
+}
+
+function temMetodo(world: GameWorld | null, nome: string): boolean {
+  return !!world && typeof metodo(world, nome) === "function";
+}
+
+function chamarSemArgs(world: GameWorld | null, nome: string): void {
+  if (!world) return;
+  const fn = metodo(world, nome) as MetodoSemArgs;
+  if (typeof fn === "function") fn.call(world);
+}
+
+function chamarComId(world: GameWorld | null, nome: string, id: string): void {
+  if (!world) return;
+  const fn = metodo(world, nome) as MetodoComId;
+  if (typeof fn === "function") fn.call(world, id);
+}
+
+function lerRelatorio(world: GameWorld | null): ShiftReport | null {
+  if (!world) return null;
+  const fn = metodo(world, "getShiftReport") as
+    | (() => ShiftReport | null | undefined)
+    | undefined;
+  if (typeof fn !== "function") return null;
+  return fn.call(world) ?? null;
+}
 
 export default function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -31,6 +80,12 @@ export default function GameCanvas() {
   const [instantaneo, setInstantaneo] = useState<Instantaneo>({
     gameState: null,
     opportunities: [],
+    shiftReport: null,
+  });
+  const [capacidades, setCapacidades] = useState<Capacidades>({
+    iniciarTurno: false,
+    selecionarCliente: false,
+    relatorio: false,
   });
   const [erro, setErro] = useState<string | null>(null);
 
@@ -41,6 +96,7 @@ export default function GameCanvas() {
     setInstantaneo({
       gameState: world.getState(),
       opportunities: [...world.getOpportunities()],
+      shiftReport: lerRelatorio(world),
     });
   }, []);
 
@@ -68,7 +124,6 @@ export default function GameCanvas() {
     }
 
     const engine = engineCriado;
-
     let descartado = false;
     let handle: GameHandle | null = null;
 
@@ -81,6 +136,11 @@ export default function GameCanvas() {
         }
         handle = h;
         worldRef.current = h.world;
+        setCapacidades({
+          iniciarTurno: temMetodo(h.world, "startShift"),
+          selecionarCliente: temMetodo(h.world, "selectCustomer"),
+          relatorio: temMetodo(h.world, "getShiftReport"),
+        });
         sincronizar();
 
         engine.runRenderLoop(() => {
@@ -115,6 +175,52 @@ export default function GameCanvas() {
 
   // ---- Ações da interface ligadas aos métodos públicos do GameWorld ----
 
+  const iniciarTurno = useCallback(() => {
+    chamarSemArgs(worldRef.current, "startShift");
+    sincronizar();
+  }, [sincronizar]);
+
+  const selecionarCliente = useCallback(
+    (id: string) => {
+      chamarComId(worldRef.current, "selectCustomer", id);
+      sincronizar();
+    },
+    [sincronizar]
+  );
+
+  const vender = useCallback(
+    (id: string, preco: number): ActionResult => {
+      const world = worldRef.current;
+      if (!world) return FALHA_SEM_NUCLEO;
+      const resultado = world.sellToCustomer(id, preco);
+      sincronizar();
+      return resultado;
+    },
+    [sincronizar]
+  );
+
+  const aceitarReparo = useCallback(
+    (id: string): ActionResult => {
+      const world = worldRef.current;
+      if (!world) return FALHA_SEM_NUCLEO;
+      const resultado = world.acceptRepair(id);
+      sincronizar();
+      return resultado;
+    },
+    [sincronizar]
+  );
+
+  const recusar = useCallback(
+    (id: string): ActionResult => {
+      const world = worldRef.current;
+      if (!world) return FALHA_SEM_NUCLEO;
+      const resultado = world.declineCustomer(id);
+      sincronizar();
+      return resultado;
+    },
+    [sincronizar]
+  );
+
   const alternarPausa = useCallback(() => {
     worldRef.current?.togglePause();
     sincronizar();
@@ -137,15 +243,6 @@ export default function GameCanvas() {
     [sincronizar]
   );
 
-  const contratar = useCallback(
-    (funcao: EmployeeRole, nome: string) => {
-      const ok = worldRef.current?.hireEmployee(funcao, nome) ?? false;
-      sincronizar();
-      return ok;
-    },
-    [sincronizar]
-  );
-
   const definirPreco = useCallback(
     (tipo: ProductType, preco: number) => {
       const ok = worldRef.current?.setProductPrice(tipo, preco) ?? false;
@@ -155,38 +252,11 @@ export default function GameCanvas() {
     [sincronizar]
   );
 
-  const venderParaCliente = useCallback(
-    (clienteId: string, preco: number) => {
-      const resultado = worldRef.current?.sellToCustomer(clienteId, preco) ?? {
-        ok: false,
-        message: "A simulação ainda não está pronta.",
-      };
+  const contratar = useCallback(
+    (funcao: EmployeeRole, nome: string) => {
+      const ok = worldRef.current?.hireEmployee(funcao, nome) ?? false;
       sincronizar();
-      return resultado;
-    },
-    [sincronizar]
-  );
-
-  const aceitarReparo = useCallback(
-    (clienteId: string) => {
-      const resultado = worldRef.current?.acceptRepair(clienteId) ?? {
-        ok: false,
-        message: "A simulação ainda não está pronta.",
-      };
-      sincronizar();
-      return resultado;
-    },
-    [sincronizar]
-  );
-
-  const dispensarCliente = useCallback(
-    (clienteId: string) => {
-      const resultado = worldRef.current?.declineCustomer(clienteId) ?? {
-        ok: false,
-        message: "A simulação ainda não está pronta.",
-      };
-      sincronizar();
-      return resultado;
+      return ok;
     },
     [sincronizar]
   );
@@ -216,14 +286,18 @@ export default function GameCanvas() {
         <GameUI
           gameState={instantaneo.gameState}
           opportunities={instantaneo.opportunities}
+          shiftReport={instantaneo.shiftReport}
+          capacidades={capacidades}
+          onStartShift={iniciarTurno}
+          onSelectCustomer={selecionarCliente}
+          onSell={vender}
+          onAcceptRepair={aceitarReparo}
+          onDecline={recusar}
           onTogglePause={alternarPausa}
           onTimeSpeedChange={mudarVelocidade}
           onBuyStock={comprarEstoque}
           onSetPrice={definirPreco}
           onHire={contratar}
-          onSellToCustomer={venderParaCliente}
-          onAcceptRepair={aceitarReparo}
-          onDeclineCustomer={dispensarCliente}
           onClearOpportunities={limparOportunidades}
           onReset={reiniciar}
         />

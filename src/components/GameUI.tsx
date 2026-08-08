@@ -1,40 +1,54 @@
-// GameUI.tsx — dashboard do jogo sobreposto ao canvas Babylon.
+// GameUI.tsx — interface da Fase 2: preparação → turno de 120 s → fechamento.
 // Sem dependências de UI externas: só React + styles.css.
+//
+// Regra da divisão de trabalho: nenhuma regra econômica mora aqui. Este arquivo
+// só lê o estado publicado pelo GameWorld e chama os métodos dele.
 
 import { useEffect, useState } from "react";
 import type {
+  ActionResult,
   Customer,
   CustomerStatus,
   EmployeeRole,
+  GamePhase,
   GameState,
   Opportunity,
+  Product,
   ProductType,
+  ShiftReport,
 } from "@/game/types";
+
+/** O que o núcleo já expõe. Enquanto o Codex termina, a interface se adapta. */
+export interface Capacidades {
+  iniciarTurno: boolean;
+  selecionarCliente: boolean;
+  relatorio: boolean;
+}
 
 interface GameUIProps {
   gameState: GameState | null;
   opportunities: Opportunity[];
+  shiftReport: ShiftReport | null;
+  capacidades: Capacidades;
+  onStartShift: () => void;
+  onSelectCustomer: (id: string) => void;
+  onSell: (id: string, preco: number) => ActionResult;
+  onAcceptRepair: (id: string) => ActionResult;
+  onDecline: (id: string) => ActionResult;
   onTogglePause: () => void;
   onTimeSpeedChange: (velocidade: number) => void;
   onBuyStock: (tipo: ProductType, quantidade: number) => boolean;
   onSetPrice: (tipo: ProductType, preco: number) => boolean;
   onHire: (funcao: EmployeeRole, nome: string) => boolean;
-  onSellToCustomer: (clienteId: string, preco: number) => { ok: boolean; message: string };
-  onAcceptRepair: (clienteId: string) => { ok: boolean; message: string };
-  onDeclineCustomer: (clienteId: string) => { ok: boolean; message: string };
   onClearOpportunities: () => void;
   onReset: () => void;
 }
 
-type Aba = "painel" | "oportunidades";
+type AbaLateral = "estoque" | "equipe" | "consultor";
 type Aviso = { texto: string; tipo: "ok" | "erro" } | null;
 
 const VELOCIDADES = [0.5, 1, 2, 4];
 const LOTES = [5, 10, 20];
-
-// Escala de tempo do GameWorld: 1 dia de jogo = 8 minutos = 480 s.
-const SEGUNDOS_POR_DIA = 480;
-const SEGUNDOS_POR_HORA = SEGUNDOS_POR_DIA / 24;
 
 const SALARIOS: Record<EmployeeRole, number> = {
   seller: 2000,
@@ -53,6 +67,12 @@ const STATUS_CLIENTE: Record<CustomerStatus, string> = {
   beingServed: "em atendimento",
   repairing: "em reparo",
   leaving: "saindo",
+};
+
+const URGENCIA: Record<Customer["urgency"], string> = {
+  low: "tranquilo",
+  medium: "com pressa",
+  high: "urgente",
 };
 
 // A função aparece logo abaixo do nome no painel, então o nome gerado não
@@ -81,6 +101,19 @@ const moeda = new Intl.NumberFormat("pt-BR", {
 
 const formatarMoeda = (valor: number) => moeda.format(valor);
 
+/** O núcleo pode ainda não ter preenchido o campo; a tela não pode quebrar. */
+const numero = (valor: number | undefined, padrao = 0) =>
+  typeof valor === "number" && Number.isFinite(valor) ? valor : padrao;
+
+const faseDe = (fase: GamePhase | undefined): GamePhase => fase ?? "planning";
+
+function relogioTurno(segundos: number): string {
+  const total = Math.max(0, Math.ceil(segundos));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
 const ICONES = {
   dinheiro: "M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6",
   grafico: "M3 17l6-6 4 4 8-8M15 7h6v6",
@@ -91,6 +124,9 @@ const ICONES = {
     "M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z",
   raio: "M13 2 3 14h9l-1 8 10-12h-9l1-8z",
   chave: "M14.7 6.3a4 4 0 0 0 5 5l-9.6 9.6a2 2 0 0 1-2.8 0l-2.2-2.2a2 2 0 0 1 0-2.8z",
+  relogio: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2",
+  estrela:
+    "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
   play: "M5 3l14 9-14 9V3z",
   pause: "M6 4h4v16H6zM14 4h4v16h-4z",
 } as const;
@@ -113,36 +149,33 @@ function Icone({ d }: { d: string }) {
   );
 }
 
-export function GameUI({
-  gameState,
-  opportunities,
-  onTogglePause,
-  onTimeSpeedChange,
-  onBuyStock,
-  onSetPrice,
-  onHire,
-  onSellToCustomer,
-  onAcceptRepair,
-  onDeclineCustomer,
-  onClearOpportunities,
-  onReset,
-}: GameUIProps) {
-  const [aba, setAba] = useState<Aba>("painel");
+export function GameUI(props: GameUIProps) {
+  const { gameState, opportunities, shiftReport, capacidades } = props;
+
+  const [aba, setAba] = useState<AbaLateral>("estoque");
   const [lote, setLote] = useState(5);
   const [aviso, setAviso] = useState<Aviso>(null);
-  // Preço em edição por produto; enquanto houver rascunho, o campo não é
-  // sobrescrito pelas atualizações da simulação.
-  const [rascunhoPreco, setRascunhoPreco] = useState<Partial<Record<ProductType, string>>>({});
+  const [rascunhoPreco, setRascunhoPreco] = useState<
+    Partial<Record<ProductType, string>>
+  >({});
+  const [oferta, setOferta] = useState<string | null>(null);
+  const [selecaoLocal, setSelecaoLocal] = useState<string | null>(null);
   const [confirmarReinicio, setConfirmarReinicio] = useState(false);
+  // O fechamento pode ser dispensado para o jogador repor estoque antes de
+  // abrir o dia seguinte: o núcleo vai direto de "summary" para o turno novo.
+  const [resumoFechado, setResumoFechado] = useState(false);
 
-  // O aviso some sozinho depois de 2,5 s.
+  const diaDoRelatorio = shiftReport?.day;
+  useEffect(() => {
+    setResumoFechado(false);
+  }, [diaDoRelatorio]);
+
   useEffect(() => {
     if (!aviso) return;
-    const t = window.setTimeout(() => setAviso(null), 2500);
+    const t = window.setTimeout(() => setAviso(null), 2600);
     return () => window.clearTimeout(t);
   }, [aviso]);
 
-  // A confirmação de reinício expira sozinha para não ficar armada por engano.
   useEffect(() => {
     if (!confirmarReinicio) return;
     const t = window.setTimeout(() => setConfirmarReinicio(false), 4000);
@@ -163,30 +196,57 @@ export function GameUI({
   const funcionarios = Array.from(gameState.employees.values());
   const clientes = Array.from(gameState.customers.values());
 
-  const dia = Math.floor(gameState.time / SEGUNDOS_POR_DIA) + 1;
-  const segundosNoDia = gameState.time % SEGUNDOS_POR_DIA;
-  const hora = Math.floor(segundosNoDia / SEGUNDOS_POR_HORA);
-  // Sem os minutos o relógio só mudaria a cada 20 s reais em 1x.
-  const minuto = Math.floor(((segundosNoDia % SEGUNDOS_POR_HORA) / SEGUNDOS_POR_HORA) * 60);
+  const fase = faseDe(gameState.phase);
+  const dia = numero(gameState.day, 1);
+  const duracao = numero(gameState.shiftDuration, 120);
+  const restante = numero(gameState.shiftTimeRemaining, duracao);
+  const meta = numero(gameState.dailyGoal);
+  const reputacao = numero(gameState.reputation, 50);
 
   const naLoja = clientes.filter((c) => c.status !== "leaving");
-  const aguardandoVenda = naLoja.filter(
-    (c) => c.status === "waiting" && c.needsProduct
-  ).length;
-  const aguardandoReparo = naLoja.filter(
-    (c) => c.status === "waiting" && c.needsService
-  ).length;
-  const clientePendente = naLoja.find((c) => c.status === "waiting");
+  const aguardando = naLoja.filter((c) => c.status === "waiting");
+  const emReparo = naLoja.filter((c) => c.status === "repairing");
 
-  const reparosAbertos = gameState.repairs.filter((r) => !r.completed);
-  const reparosConcluidos = gameState.repairs.filter((r) => r.completed);
-  const lucroReparos = reparosConcluidos.reduce((s, r) => s + r.profit, 0);
-  const lucroVendas = gameState.sales.reduce((s, v) => s + v.profit, 0);
-  const folha = funcionarios.reduce((s, f) => s + f.salary, 0);
-  const ultimasVendas = gameState.sales.slice(-5).reverse();
+  // Seleção: manda o núcleo; se ele ainda não expõe, a tela mantém o foco.
+  // Só fica no balcão quem ainda dá para atender — depois da venda o cliente
+  // vira "leaving" e o posto precisa liberar para o próximo da fila.
+  const idPreferido = gameState.selectedCustomerId ?? selecaoLocal ?? undefined;
+  const preferido = idPreferido ? gameState.customers.get(idPreferido) : undefined;
+  const selecionado =
+    preferido && preferido.status === "waiting" ? preferido : aguardando[0];
+  const idSelecionado = selecionado?.id;
+
+  // Filtro de exibição (não é contabilidade): o turno começou em
+  // time - (duracao - restante), então dá para mostrar o que já entrou hoje.
+  // A meta do núcleo é comparada com a RECEITA do turno, então a barra usa
+  // receita — mostrar lucro aqui contradiria o relatório de fechamento.
+  const inicioDoTurno = gameState.time - (duracao - restante);
+  const receitaDoTurno =
+    gameState.sales
+      .filter((v) => v.timestamp >= inicioDoTurno)
+      .reduce((s, v) => s + v.price, 0) +
+    gameState.repairs
+      .filter((r) => r.completed && r.startTime >= inicioDoTurno)
+      .reduce((s, r) => s + r.price, 0);
+  const progressoMeta = meta > 0 ? Math.min(100, (receitaDoTurno / meta) * 100) : 0;
+
+  const selecionar = (id: string) => {
+    setSelecaoLocal(id);
+    setOferta(null);
+    if (capacidades.selecionarCliente) props.onSelectCustomer(id);
+  };
+
+  const aplicarResultado = (r: ActionResult) => {
+    setAviso({ texto: r.message, tipo: r.ok ? "ok" : "erro" });
+    if (r.ok) setOferta(null);
+  };
+
+  const vender = (cliente: Customer, preco: number) => {
+    aplicarResultado(props.onSell(cliente.id, preco));
+  };
 
   const comprar = (tipo: ProductType, nome: string, custo: number) => {
-    const ok = onBuyStock(tipo, lote);
+    const ok = props.onBuyStock(tipo, lote);
     setAviso(
       ok
         ? { texto: `+${lote} ${nome} por ${formatarMoeda(custo)}`, tipo: "ok" }
@@ -204,13 +264,9 @@ export function GameUI({
       setAviso({ texto: "Informe um preço válido.", tipo: "erro" });
       return;
     }
-    const ok = onSetPrice(tipo, valor);
-    if (ok) {
+    if (props.onSetPrice(tipo, valor)) {
       setRascunhoPreco((atual) => ({ ...atual, [tipo]: undefined }));
-      setAviso({
-        texto: `${nome} agora custa ${formatarMoeda(valor)}`,
-        tipo: "ok",
-      });
+      setAviso({ texto: `${nome} agora custa ${formatarMoeda(valor)}`, tipo: "ok" });
     } else {
       setAviso({
         texto: `Preço recusado: precisa ser no mínimo o custo (${formatarMoeda(custoUnitario)}).`,
@@ -222,7 +278,7 @@ export function GameUI({
   const contratar = (funcao: EmployeeRole) => {
     const nome = nomeParaContratacao(funcionarios.length);
     const entrada = SALARIOS[funcao] * 2;
-    const ok = onHire(funcao, nome);
+    const ok = props.onHire(funcao, nome);
     setAviso(
       ok
         ? { texto: `${nome} contratado(a) por ${formatarMoeda(entrada)}`, tipo: "ok" }
@@ -240,16 +296,15 @@ export function GameUI({
     }
     setConfirmarReinicio(false);
     setRascunhoPreco({});
-    onReset();
+    setSelecaoLocal(null);
+    props.onReset();
     setAviso({ texto: "Jogo reiniciado.", tipo: "ok" });
   };
 
-  const registrarResultado = (resultado: { ok: boolean; message: string }) => {
-    setAviso({ texto: resultado.message, tipo: resultado.ok ? "ok" : "erro" });
-  };
+  const emTurno = fase === "active";
 
   return (
-    <div className="ui-root">
+    <div className={`ui-root fase-${fase}`}>
       {/* ---------- Barra superior ---------- */}
       <header className="topbar">
         <div className="marca">
@@ -257,12 +312,36 @@ export function GameUI({
           <div>
             <h1 className="marca__titulo">TECH STORE TYCOON</h1>
             <p className="marca__relogio">
-              Dia {dia} · {String(hora).padStart(2, "0")}:
-              {String(minuto).padStart(2, "0")} ·{" "}
-              {gameState.isPaused ? "pausado" : `${gameState.timeSpeed}x`}
+              {/* No fechamento o núcleo já incrementou o dia, então quem manda
+                  no rótulo é o dia do relatório. */}
+              Dia {fase === "summary" ? (shiftReport?.day ?? dia) : dia} ·{" "}
+              {fase === "planning"
+                ? "preparação"
+                : fase === "active"
+                  ? "turno em andamento"
+                  : "fechamento"}
             </p>
           </div>
         </div>
+
+        {emTurno && (
+          <div className="cronometro">
+            <span className="cronometro__rotulo">
+              <Icone d={ICONES.relogio} /> Turno
+            </span>
+            <strong
+              className={`cronometro__valor ${restante <= 20 ? "valor--negativo" : ""}`}
+            >
+              {relogioTurno(restante)}
+            </strong>
+            <div className="barra barra--turno">
+              <div
+                className="barra__preenchimento"
+                style={{ width: `${duracao > 0 ? (restante / duracao) * 100 : 0}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         <div className="topbar__resumo">
           <div className="resumo-item">
@@ -276,29 +355,36 @@ export function GameUI({
             </span>
           </div>
           <div className="resumo-item">
-            <span className="resumo-item__rotulo">Na loja</span>
-            <span className="resumo-item__valor valor--ciano">{naLoja.length}</span>
+            <span className="resumo-item__rotulo">Meta do dia</span>
+            <span className="resumo-item__valor valor--ciano">
+              {formatarMoeda(receitaDoTurno)}
+              <small className="resumo-item__alvo"> / {formatarMoeda(meta)}</small>
+            </span>
           </div>
           <div className="resumo-item">
-            <span className="resumo-item__rotulo">Alertas</span>
+            <span className="resumo-item__rotulo">Reputação</span>
             <span className="resumo-item__valor valor--alerta">
-              {opportunities.length}
+              {Math.round(reputacao)}
             </span>
           </div>
         </div>
 
         <div className="controles-tempo">
-          <button className="btn" onClick={onTogglePause}>
-            <Icone d={gameState.isPaused ? ICONES.play : ICONES.pause} />
-            {gameState.isPaused ? "Retomar" : "Pausar"}
-          </button>
+          {/* Fora do turno não há relógio para pausar: o botão sumir evita
+              um controle morto na barra. */}
+          {emTurno && (
+            <button className="btn" onClick={props.onTogglePause}>
+              <Icone d={gameState.isPaused ? ICONES.play : ICONES.pause} />
+              {gameState.isPaused ? "Retomar" : "Pausar"}
+            </button>
+          )}
           {VELOCIDADES.map((v) => (
             <button
               key={v}
               className={`btn btn--pequeno ${
                 gameState.timeSpeed === v ? "btn--ativo" : ""
               }`}
-              onClick={() => onTimeSpeedChange(v)}
+              onClick={() => props.onTimeSpeedChange(v)}
             >
               {v}x
             </button>
@@ -306,213 +392,222 @@ export function GameUI({
         </div>
       </header>
 
-      {/* Cada chegada exige uma decisão. O relógio pausa até o jogador escolher. */}
-      <main className="mesa-atendimento">
-        {clientePendente ? (
-          <AtendimentoCard
-            cliente={clientePendente}
-            produto={
-              clientePendente.needsProduct
-                ? gameState.products.get(clientePendente.needsProduct)
-                : undefined
-            }
-            onSell={(preco) => registrarResultado(onSellToCustomer(clientePendente.id, preco))}
-            onAcceptRepair={() => registrarResultado(onAcceptRepair(clientePendente.id))}
-            onDecline={() => registrarResultado(onDeclineCustomer(clientePendente.id))}
+      {/* ---------- Barra de meta ---------- */}
+      <div className="faixa-meta">
+        <div className="faixa-meta__barra">
+          <div
+            className={`faixa-meta__preenchimento ${
+              progressoMeta >= 100 ? "faixa-meta__preenchimento--ok" : ""
+            }`}
+            style={{ width: `${progressoMeta}%` }}
           />
-        ) : (
-          <div className="mesa-atendimento__vazia">
-            <strong>{gameState.isPaused ? "Tudo resolvido." : "Loja aberta."}</strong>
-            <span>{gameState.isPaused ? "Retome o relógio para receber o próximo cliente." : "Aguardando o próximo cliente."}</span>
-          </div>
-        )}
-      </main>
-
-      {/* ---------- Painel esquerdo ---------- */}
-      <aside className="painel painel--esquerda">
-        <div className="abas">
-          <div className="aba">
-            <button
-              className={`btn btn--largo ${aba === "painel" ? "btn--ativo" : ""}`}
-              onClick={() => setAba("painel")}
-            >
-              Painel
-            </button>
-          </div>
-          <div className="aba">
-            <button
-              className={`btn btn--largo ${
-                aba === "oportunidades" ? "btn--ativo" : ""
-              }`}
-              onClick={() => setAba("oportunidades")}
-            >
-              Oportunidades
-            </button>
-            {opportunities.length > 0 && (
-              <span className="aba__contador">{opportunities.length}</span>
-            )}
-          </div>
         </div>
+        <span className="faixa-meta__texto">
+          {meta > 0
+            ? `Receita do turno ${formatarMoeda(receitaDoTurno)} de ${formatarMoeda(meta)}`
+            : "Meta do dia ainda não definida pelo núcleo"}
+        </span>
+      </div>
 
-        {aba === "painel" && (
-          <>
-            {/* Finanças */}
-            <section className="card">
-              <div className="card__cabecalho">
-                <h2 className="card__titulo">
-                  <Icone d={ICONES.dinheiro} /> Finanças
-                </h2>
+      {/* ---------- Palco central ---------- */}
+      <main className="palco">
+        {!emTurno && (
+          <section className="palco__card">
+            <p className="palco__etiqueta">Dia {dia}</p>
+            <h2 className="palco__titulo">
+              {fase === "summary" ? "Preparar o próximo dia" : "Preparação"}
+            </h2>
+            <p className="palco__texto">
+              Ajuste preços, reponha estoque e contrate quem for preciso no
+              painel à esquerda. Quando abrir a loja, os clientes chegam sem
+              esperar: cada um é uma decisão sua.
+            </p>
+            <div className="palco__kpis">
+              <div className="kpi">
+                <span className="kpi__rotulo">Meta de lucro</span>
+                <strong className="kpi__valor valor--ciano">
+                  {formatarMoeda(meta)}
+                </strong>
               </div>
-              <div className="linha">
-                <span className="linha__rotulo">Caixa</span>
-                <span
-                  className={`linha__valor ${
-                    gameState.cash < 0 ? "valor--negativo" : "valor--positivo"
-                  }`}
-                >
+              <div className="kpi">
+                <span className="kpi__rotulo">Caixa</span>
+                <strong className="kpi__valor valor--positivo">
                   {formatarMoeda(gameState.cash)}
-                </span>
+                </strong>
               </div>
-              <div className="linha">
-                <span className="linha__rotulo">Receita do mês</span>
-                <span className="linha__valor valor--positivo">
-                  {formatarMoeda(gameState.monthlyRevenue)}
-                </span>
+              <div className="kpi">
+                <span className="kpi__rotulo">Reputação</span>
+                <strong className="kpi__valor valor--alerta">
+                  {Math.round(reputacao)}/100
+                </strong>
               </div>
-              <div className="linha">
-                <span className="linha__rotulo">Despesas do mês</span>
-                <span className="linha__valor valor--negativo">
-                  {formatarMoeda(gameState.monthlyExpenses)}
-                </span>
+              <div className="kpi">
+                <span className="kpi__rotulo">Duração</span>
+                <strong className="kpi__valor">{relogioTurno(duracao)}</strong>
               </div>
-              <div className="linha">
-                <span className="linha__rotulo">Resultado do mês</span>
-                <span
-                  className={`linha__valor ${
-                    gameState.monthlyRevenue - gameState.monthlyExpenses < 0
-                      ? "valor--negativo"
-                      : "valor--positivo"
-                  }`}
-                >
-                  {formatarMoeda(
-                    gameState.monthlyRevenue - gameState.monthlyExpenses
-                  )}
-                </span>
-              </div>
-              <hr className="separador" />
-              <div className="linha">
-                <span className="linha__rotulo">Receita acumulada</span>
-                <span className="linha__valor">
-                  {formatarMoeda(gameState.totalRevenue)}
-                </span>
-              </div>
-              <div className="linha">
-                <span className="linha__rotulo">Despesas acumuladas</span>
-                <span className="linha__valor">
-                  {formatarMoeda(gameState.totalExpenses)}
-                </span>
-              </div>
-              <div className="linha">
-                <span className="linha__rotulo">Folha mensal</span>
-                <span className="linha__valor valor--alerta">
-                  {formatarMoeda(folha)}
-                </span>
-              </div>
-              <p className="nota">
-                O mês fecha a cada 30 dias de jogo: os salários saem do caixa e
-                os totais do mês voltam a zero.
+            </div>
+            <button
+              className="btn btn--gigante"
+              onClick={props.onStartShift}
+              disabled={!capacidades.iniciarTurno}
+              title={
+                capacidades.iniciarTurno
+                  ? "Abrir a loja e começar o turno"
+                  : "startShift() ainda não existe no GameWorld"
+              }
+            >
+              Abrir a loja · turno de {relogioTurno(duracao)}
+            </button>
+            {!capacidades.iniciarTurno && (
+              <p className="palco__aviso">
+                O núcleo ainda não expõe <code>startShift()</code>. Assim que o
+                Codex publicar o método, este botão liga sozinho.
+              </p>
+            )}
+          </section>
+        )}
+
+        {emTurno &&
+          (selecionado ? (
+            <PostoAtendimento
+              cliente={selecionado}
+              produto={
+                selecionado.needsProduct
+                  ? gameState.products.get(selecionado.needsProduct)
+                  : undefined
+              }
+              oferta={oferta}
+              onOferta={setOferta}
+              onVender={vender}
+              onAceitarReparo={(id) => aplicarResultado(props.onAcceptRepair(id))}
+              onRecusar={(id) => aplicarResultado(props.onDecline(id))}
+            />
+          ) : (
+            <section className="palco__card palco__card--vazio">
+              <h2 className="palco__titulo">Balcão livre</h2>
+              <p className="palco__texto">
+                Ninguém esperando agora. Aproveite para repor estoque — o próximo
+                cliente entra a qualquer momento.
               </p>
             </section>
+          ))}
+      </main>
 
-            {/* Vendas */}
-            <section className="card">
-              <div className="card__cabecalho">
-                <h2 className="card__titulo">
-                  <Icone d={ICONES.grafico} /> Vendas
-                </h2>
-              </div>
-              <div className="linha">
-                <span className="linha__rotulo">Vendas fechadas</span>
-                <span className="linha__valor valor--positivo">
-                  {gameState.sales.length}
-                </span>
-              </div>
-              <div className="linha">
-                <span className="linha__rotulo">Lucro em vendas</span>
-                <span className="linha__valor valor--positivo">
-                  {formatarMoeda(lucroVendas)}
-                </span>
-              </div>
-              <div className="linha">
-                <span className="linha__rotulo">Vendas perdidas</span>
-                <span className="linha__valor valor--alerta">
-                  {gameState.missedSales}
-                </span>
-              </div>
-              {ultimasVendas.length > 0 && (
-                <>
-                  <hr className="separador" />
-                  {ultimasVendas.map((venda, i) => (
-                    <div className="linha" key={`${venda.id}-${i}`}>
-                      <span className="linha__rotulo">
-                        {gameState.products.get(venda.productType)?.name ??
-                          venda.productType}
-                      </span>
-                      <span className="linha__valor valor--ciano">
-                        {formatarMoeda(venda.price)}{" "}
-                        <span className="valor--positivo">
-                          (+{formatarMoeda(venda.profit)})
-                        </span>
-                      </span>
-                    </div>
-                  ))}
-                  <p className="nota">
-                    Últimas vendas: preço cobrado e lucro depois do custo.
-                  </p>
-                </>
+      {/* ---------- Painel esquerdo: preparação ---------- */}
+      <aside className={`painel painel--esquerda ${emTurno ? "painel--discreto" : ""}`}>
+        <div className="abas">
+          {(["estoque", "equipe", "consultor"] as AbaLateral[]).map((valor) => (
+            <div className="aba" key={valor}>
+              <button
+                className={`btn btn--largo ${aba === valor ? "btn--ativo" : ""}`}
+                onClick={() => setAba(valor)}
+              >
+                {valor === "estoque"
+                  ? "Estoque"
+                  : valor === "equipe"
+                    ? "Equipe"
+                    : "Consultor"}
+              </button>
+              {valor === "consultor" && opportunities.length > 0 && (
+                <span className="aba__contador">{opportunities.length}</span>
               )}
-            </section>
+            </div>
+          ))}
+        </div>
 
-            {/* Assistência técnica */}
-            <section className="card">
-              <div className="card__cabecalho">
-                <h2 className="card__titulo">
-                  <Icone d={ICONES.chave} /> Assistência técnica
-                </h2>
-              </div>
-              <div className="linha">
-                <span className="linha__rotulo">Na fila</span>
-                <span className="linha__valor valor--alerta">
-                  {aguardandoReparo}
-                </span>
-              </div>
-              <div className="linha">
-                <span className="linha__rotulo">Ordens em andamento</span>
-                <span className="linha__valor valor--ciano">
-                  {reparosAbertos.length}
-                </span>
-              </div>
-              <div className="linha">
-                <span className="linha__rotulo">Ordens concluídas</span>
-                <span className="linha__valor valor--positivo">
-                  {reparosConcluidos.length}
-                </span>
-              </div>
-              <div className="linha">
-                <span className="linha__rotulo">Lucro em reparos</span>
-                <span className="linha__valor valor--positivo">
-                  {formatarMoeda(lucroReparos)}
-                </span>
-              </div>
-              <div className="linha">
-                <span className="linha__rotulo">Reparos perdidos</span>
-                <span className="linha__valor valor--negativo">
-                  {gameState.missedRepairs}
-                </span>
-              </div>
-            </section>
+        {aba === "estoque" && (
+          <section className="card">
+            <div className="card__cabecalho">
+              <h2 className="card__titulo">
+                <Icone d={ICONES.caixa} /> Estoque e preços
+              </h2>
+            </div>
+            <div className="lote">
+              <span>Lote de compra:</span>
+              {LOTES.map((q) => (
+                <button
+                  key={q}
+                  className={`btn btn--pequeno ${lote === q ? "btn--ativo" : ""}`}
+                  onClick={() => setLote(q)}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+            {produtos.map((p) => {
+              const custoLote = p.costPrice * lote;
+              const rascunho = rascunhoPreco[p.type];
+              return (
+                <div className="produto-item" key={p.id}>
+                  <div className="produto">
+                    <div>
+                      <div className="produto__nome">{p.name}</div>
+                      <div className="produto__meta">
+                        custo {formatarMoeda(p.costPrice)} · margem{" "}
+                        {formatarMoeda(p.sellingPrice - p.costPrice)} · vendidos{" "}
+                        {p.unitsSold} · demanda {Math.round(p.demand)}%
+                      </div>
+                      <div className="barra">
+                        <div
+                          className="barra__preenchimento"
+                          style={{ width: `${Math.min(100, p.demand)}%` }}
+                        />
+                      </div>
+                    </div>
+                    <span
+                      className={`produto__estoque ${
+                        p.stock < 2 ? "valor--negativo" : "valor--ciano"
+                      }`}
+                    >
+                      {p.stock}
+                    </span>
+                    <button
+                      className="btn btn--pequeno"
+                      onClick={() => comprar(p.type, p.name, custoLote)}
+                      disabled={gameState.cash < custoLote}
+                      title={`Comprar ${lote} por ${formatarMoeda(custoLote)}`}
+                    >
+                      +{lote}
+                    </button>
+                  </div>
+                  <div className="produto__preco">
+                    <span className="linha__rotulo">Preço R$</span>
+                    <input
+                      className="entrada"
+                      type="number"
+                      min={p.costPrice}
+                      step="1"
+                      value={rascunho ?? p.sellingPrice.toFixed(2)}
+                      onChange={(e) =>
+                        setRascunhoPreco((atual) => ({
+                          ...atual,
+                          [p.type]: e.target.value,
+                        }))
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") aplicarPreco(p.type, p.name, p.costPrice);
+                      }}
+                    />
+                    <button
+                      className="btn btn--pequeno"
+                      disabled={rascunho === undefined}
+                      onClick={() => aplicarPreco(p.type, p.name, p.costPrice)}
+                    >
+                      Aplicar
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            <p className="nota">
+              A compra sai do caixa na hora. O preço de vitrine é o ponto de
+              partida da negociação no balcão.
+            </p>
+          </section>
+        )}
 
-            {/* Equipe */}
+        {aba === "equipe" && (
+          <>
             <section className="card">
               <div className="card__cabecalho">
                 <h2 className="card__titulo">
@@ -539,126 +634,62 @@ export function GameUI({
                       {f.isBusy ? "ocupado" : "livre"}
                     </span>
                     <p className="funcionario__funcao">
-                      hab. {Math.round(f.skill)}% · ânimo{" "}
-                      {Math.round(f.happiness)}%
+                      hab. {Math.round(f.skill)}% · ânimo {Math.round(f.happiness)}%
                     </p>
                   </div>
                 </div>
               ))}
               <div className="acoes">
-                <button
-                  className="btn btn--largo"
-                  onClick={() => contratar("seller")}
-                  title={`Custo de entrada: ${formatarMoeda(SALARIOS.seller * 2)}`}
-                >
+                <button className="btn btn--largo" onClick={() => contratar("seller")}>
                   + Vendedor ({formatarMoeda(SALARIOS.seller * 2)})
                 </button>
                 <button
                   className="btn btn--largo"
                   onClick={() => contratar("technician")}
-                  title={`Custo de entrada: ${formatarMoeda(SALARIOS.technician * 2)}`}
                 >
                   + Técnico ({formatarMoeda(SALARIOS.technician * 2)})
                 </button>
               </div>
               <p className="nota">
-                A contratação cobra dois salários adiantados e aumenta a folha
-                mensal em {formatarMoeda(SALARIOS.seller)} (vendedor) ou{" "}
-                {formatarMoeda(SALARIOS.technician)} (técnico).
+                Vendedor fecha vendas; técnico assume ordens de reparo. Sem gente
+                livre, o balcão trava.
               </p>
             </section>
 
-            {/* Estoque e preços */}
             <section className="card">
               <div className="card__cabecalho">
                 <h2 className="card__titulo">
-                  <Icone d={ICONES.caixa} /> Estoque e preços
+                  <Icone d={ICONES.dinheiro} /> Finanças
                 </h2>
               </div>
-              <div className="lote">
-                <span>Lote de compra:</span>
-                {LOTES.map((q) => (
-                  <button
-                    key={q}
-                    className={`btn btn--pequeno ${lote === q ? "btn--ativo" : ""}`}
-                    onClick={() => setLote(q)}
-                  >
-                    {q}
-                  </button>
-                ))}
+              <div className="linha">
+                <span className="linha__rotulo">Caixa</span>
+                <span
+                  className={`linha__valor ${
+                    gameState.cash < 0 ? "valor--negativo" : "valor--positivo"
+                  }`}
+                >
+                  {formatarMoeda(gameState.cash)}
+                </span>
               </div>
-              {produtos.map((p) => {
-                const custoLote = p.costPrice * lote;
-                const margem = p.sellingPrice - p.costPrice;
-                const rascunho = rascunhoPreco[p.type];
-                return (
-                  <div className="produto-item" key={p.id}>
-                    <div className="produto">
-                      <div>
-                        <div className="produto__nome">{p.name}</div>
-                        <div className="produto__meta">
-                          custo {formatarMoeda(p.costPrice)} · margem{" "}
-                          {formatarMoeda(margem)} · vendidos {p.unitsSold} ·
-                          demanda {Math.round(p.demand)}%
-                        </div>
-                        <div className="barra">
-                          <div
-                            className="barra__preenchimento"
-                            style={{ width: `${Math.min(100, p.demand)}%` }}
-                          />
-                        </div>
-                      </div>
-                      <span
-                        className={`produto__estoque ${
-                          p.stock < 2 ? "valor--negativo" : "valor--ciano"
-                        }`}
-                      >
-                        {p.stock}
-                      </span>
-                      <button
-                        className="btn btn--pequeno"
-                        onClick={() => comprar(p.type, p.name, custoLote)}
-                        disabled={gameState.cash < custoLote}
-                        title={`Comprar ${lote} por ${formatarMoeda(custoLote)}`}
-                      >
-                        +{lote}
-                      </button>
-                    </div>
-                    <div className="produto__preco">
-                      <span className="linha__rotulo">Preço R$</span>
-                      <input
-                        className="entrada"
-                        type="number"
-                        min={p.costPrice}
-                        step="1"
-                        value={rascunho ?? p.sellingPrice.toFixed(2)}
-                        onChange={(e) =>
-                          setRascunhoPreco((atual) => ({
-                            ...atual,
-                            [p.type]: e.target.value,
-                          }))
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            aplicarPreco(p.type, p.name, p.costPrice);
-                          }
-                        }}
-                      />
-                      <button
-                        className="btn btn--pequeno"
-                        disabled={rascunho === undefined}
-                        onClick={() => aplicarPreco(p.type, p.name, p.costPrice)}
-                      >
-                        Aplicar
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-              <p className="nota">
-                A compra sai do caixa na hora e entra como despesa do mês. O
-                preço não pode ficar abaixo do custo.
-              </p>
+              <div className="linha">
+                <span className="linha__rotulo">Receita acumulada</span>
+                <span className="linha__valor">
+                  {formatarMoeda(gameState.totalRevenue)}
+                </span>
+              </div>
+              <div className="linha">
+                <span className="linha__rotulo">Despesas acumuladas</span>
+                <span className="linha__valor">
+                  {formatarMoeda(gameState.totalExpenses)}
+                </span>
+              </div>
+              <div className="linha">
+                <span className="linha__rotulo">Folha mensal</span>
+                <span className="linha__valor valor--alerta">
+                  {formatarMoeda(funcionarios.reduce((s, f) => s + f.salary, 0))}
+                </span>
+              </div>
             </section>
 
             <button
@@ -672,18 +703,18 @@ export function GameUI({
           </>
         )}
 
-        {aba === "oportunidades" && (
+        {aba === "consultor" && (
           <>
             {opportunities.length === 0 ? (
               <div className="card">
                 <p className="vazio">
-                  Nenhuma oportunidade detectada agora. O consultor reavalia a
-                  loja a cada 20 segundos de jogo.
+                  Sem apontamentos por enquanto. O consultor analisa o turno
+                  enquanto você atende.
                 </p>
               </div>
             ) : (
               <>
-                <button className="btn btn--largo" onClick={onClearOpportunities}>
+                <button className="btn btn--largo" onClick={props.onClearOpportunities}>
                   Limpar oportunidades
                 </button>
                 {opportunities.map((o) => (
@@ -695,57 +726,59 @@ export function GameUI({
         )}
       </aside>
 
-      {/* ---------- Painel direito ---------- */}
+      {/* ---------- Painel direito: fila ---------- */}
       <aside className="painel painel--direita">
         <div className="card card--magenta">
           <div className="card__cabecalho">
             <h2 className="card__titulo">
-              <Icone d={ICONES.raio} /> Clientes na loja
+              <Icone d={ICONES.raio} /> Fila
             </h2>
-            <span className="linha__valor">{naLoja.length}</span>
+            <span className="linha__valor">{aguardando.length}</span>
           </div>
           <div className="linha">
-            <span className="linha__rotulo">Fila do balcão</span>
-            <span className="linha__valor valor--ciano">{aguardandoVenda}</span>
+            <span className="linha__rotulo">Em reparo</span>
+            <span className="linha__valor valor--ciano">{emReparo.length}</span>
           </div>
           <div className="linha">
-            <span className="linha__rotulo">Fila da assistência</span>
-            <span className="linha__valor valor--alerta">{aguardandoReparo}</span>
-          </div>
-          <div className="linha">
-            <span className="linha__rotulo">Satisfação média</span>
-            <span className="linha__valor">
-              {Math.round(gameState.customerSatisfactionAvg)}%
+            <span className="linha__rotulo">Perdidos (total)</span>
+            <span className="linha__valor valor--negativo">
+              {gameState.missedSales + gameState.missedRepairs}
             </span>
           </div>
         </div>
 
         {naLoja.length === 0 ? (
           <div className="card card--magenta">
-            <p className="vazio">Loja vazia. Aguardando movimento…</p>
+            <p className="vazio">
+              {emTurno
+                ? "Ninguém na loja neste instante."
+                : "A loja abre quando você iniciar o turno."}
+            </p>
           </div>
         ) : (
-          naLoja
-            .slice(0, 10)
-            .map((c) => (
-              <ClienteCard
-                key={c.id}
-                cliente={c}
-                agora={gameState.time}
-                precoPedido={
-                  c.needsProduct
-                    ? gameState.products.get(c.needsProduct)?.sellingPrice
-                    : undefined
-                }
-                nomeProduto={
-                  c.needsProduct
-                    ? gameState.products.get(c.needsProduct)?.name
-                    : undefined
-                }
-              />
-            ))
+          naLoja.map((c) => (
+            <CartaoFila
+              key={c.id}
+              cliente={c}
+              selecionado={c.id === idSelecionado}
+              produto={c.needsProduct ? gameState.products.get(c.needsProduct) : undefined}
+              onSelecionar={selecionar}
+            />
+          ))
         )}
       </aside>
+
+      {/* ---------- Fechamento ---------- */}
+      {fase === "summary" && !resumoFechado && (
+        <ModalFechamento
+          relatorio={shiftReport}
+          temRelatorio={capacidades.relatorio}
+          podeContinuar={capacidades.iniciarTurno}
+          proximoDia={dia}
+          onContinuar={props.onStartShift}
+          onPreparar={() => setResumoFechado(true)}
+        />
+      )}
 
       {aviso && (
         <div className={`aviso ${aviso.tipo === "ok" ? "aviso--ok" : "aviso--erro"}`}>
@@ -756,65 +789,196 @@ export function GameUI({
   );
 }
 
-function AtendimentoCard({
+/* ---------------------------------------------------------------- */
+
+function PostoAtendimento({
   cliente,
   produto,
-  onSell,
-  onAcceptRepair,
-  onDecline,
+  oferta,
+  onOferta,
+  onVender,
+  onAceitarReparo,
+  onRecusar,
 }: {
   cliente: Customer;
-  produto?: { name: string; sellingPrice: number; costPrice: number; stock: number };
-  onSell: (preco: number) => void;
-  onAcceptRepair: () => void;
-  onDecline: () => void;
+  produto?: Product;
+  oferta: string | null;
+  onOferta: (valor: string | null) => void;
+  onVender: (cliente: Customer, preco: number) => void;
+  onAceitarReparo: (id: string) => void;
+  onRecusar: (id: string) => void;
 }) {
-  const venda = Boolean(cliente.needsProduct && produto);
-  const precoCheio = produto?.sellingPrice ?? 0;
-  const desconto = Math.min(precoCheio, cliente.budget);
-  const podeDarDesconto = venda && desconto < precoCheio && desconto >= (produto?.costPrice ?? Infinity);
-  const podeCobrarCheio = venda && precoCheio <= cliente.budget && (produto?.stock ?? 0) > 0;
-  const semEstoque = venda && (produto?.stock ?? 0) === 0;
+  const paciencia = Math.round(cliente.patience);
+  const classePaciencia =
+    paciencia > 60 ? "ok" : paciencia > 30 ? "alerta" : "critico";
+  const precoVitrine = produto?.sellingPrice ?? 0;
+  const valorOferta = Number((oferta ?? String(precoVitrine)).replace(",", "."));
+  const ofertaValida = Number.isFinite(valorOferta) && valorOferta > 0;
+  const semEstoque = produto ? produto.stock <= 0 : false;
 
   return (
-    <section className="atendimento-card">
-      <p className="atendimento-card__etiqueta">ATENDIMENTO PENDENTE · RELÓGIO PAUSADO</p>
-      <h2>{cliente.name}</h2>
-      {venda ? (
+    <section className={`palco__card posto posto--${cliente.urgency}`}>
+      <header className="posto__topo">
+        <div>
+          <p className="palco__etiqueta">No balcão</p>
+          <h2 className="palco__titulo">{cliente.name}</h2>
+        </div>
+        <span className={`urgencia urgencia--${cliente.urgency}`}>
+          {URGENCIA[cliente.urgency]}
+        </span>
+      </header>
+
+      {cliente.story && <p className="posto__historia">“{cliente.story}”</p>}
+
+      <div className="posto__paciencia">
+        <div className="barra barra--paciencia">
+          <div
+            className={`barra__preenchimento barra__preenchimento--${classePaciencia}`}
+            style={{ width: `${paciencia}%` }}
+          />
+        </div>
+        <span className="posto__paciencia-texto">paciência {paciencia}%</span>
+      </div>
+
+      {cliente.needsProduct && (
         <>
-          <p>Quer comprar <strong>{produto?.name}</strong>. Orçamento: <strong>{formatarMoeda(cliente.budget)}</strong>.</p>
-          <div className="atendimento-card__numeros">
-            <span>Preço da vitrine <b>{formatarMoeda(precoCheio)}</b></span>
-            <span>Custo <b>{formatarMoeda(produto?.costPrice ?? 0)}</b></span>
-            <span>Estoque <b>{produto?.stock}</b></span>
+          <div className="posto__pedido">
+            <div className="kpi">
+              <span className="kpi__rotulo">Quer levar</span>
+              <strong className="kpi__valor">
+                {produto?.name ?? cliente.needsProduct}
+              </strong>
+            </div>
+            <div className="kpi">
+              <span className="kpi__rotulo">Preço de vitrine</span>
+              <strong className="kpi__valor valor--ciano">
+                {formatarMoeda(precoVitrine)}
+              </strong>
+            </div>
+            <div className="kpi">
+              <span className="kpi__rotulo">Aceita pagar até</span>
+              <strong
+                className={`kpi__valor ${
+                  cliente.budget >= precoVitrine ? "valor--positivo" : "valor--negativo"
+                }`}
+              >
+                {formatarMoeda(cliente.budget)}
+              </strong>
+            </div>
+            <div className="kpi">
+              <span className="kpi__rotulo">Em estoque</span>
+              <strong
+                className={`kpi__valor ${semEstoque ? "valor--negativo" : ""}`}
+              >
+                {produto?.stock ?? 0}
+              </strong>
+            </div>
           </div>
-          {semEstoque && <p className="atendimento-card__aviso">Você não tem esse produto em estoque.</p>}
-          {!semEstoque && !podeCobrarCheio && !podeDarDesconto && (
-            <p className="atendimento-card__aviso">O orçamento não cobre nem o custo. Esta venda não é viável.</p>
-          )}
-          <div className="atendimento-card__acoes">
-            <button className="btn btn--ativo" disabled={!podeCobrarCheio} onClick={() => onSell(precoCheio)}>
-              Vender por {formatarMoeda(precoCheio)}
+
+          <div className="posto__oferta">
+            <span className="linha__rotulo">Fechar por R$</span>
+            <input
+              className="entrada"
+              type="number"
+              step="1"
+              min={0}
+              value={oferta ?? precoVitrine.toFixed(2)}
+              onChange={(e) => onOferta(e.target.value)}
+            />
+            <button
+              className="btn btn--pequeno"
+              onClick={() => onOferta(cliente.budget.toFixed(2))}
+              title="Igualar ao limite do cliente"
+            >
+              = orçamento
             </button>
-            {podeDarDesconto && (
-              <button className="btn" onClick={() => onSell(desconto)}>
-                Negociar por {formatarMoeda(desconto)}
-              </button>
-            )}
-            <button className="btn btn--magenta" onClick={onDecline}>Recusar</button>
+          </div>
+
+          <div className="posto__acoes">
+            <button
+              className="btn btn--gigante btn--sucesso"
+              disabled={!ofertaValida}
+              onClick={() => onVender(cliente, valorOferta)}
+            >
+              Vender por {formatarMoeda(ofertaValida ? valorOferta : 0)}
+            </button>
+            <button className="btn" onClick={() => onRecusar(cliente.id)}>
+              Dispensar
+            </button>
           </div>
         </>
-      ) : (
+      )}
+
+      {cliente.needsService && (
         <>
-          <p>Precisa de <strong>reparo</strong>. A decisão é sua: assumir a ordem ou dispensar o cliente.</p>
-          <p className="atendimento-card__detalhe">Valor estimado do serviço varia com a habilidade do técnico disponível.</p>
-          <div className="atendimento-card__acoes">
-            <button className="btn btn--ativo" onClick={onAcceptRepair}>Aceitar reparo</button>
-            <button className="btn btn--magenta" onClick={onDecline}>Recusar</button>
+          <div className="posto__pedido">
+            <div className="kpi">
+              <span className="kpi__rotulo">Precisa de</span>
+              <strong className="kpi__valor">Assistência técnica</strong>
+            </div>
+            <div className="kpi">
+              <span className="kpi__rotulo">Situação</span>
+              <strong className="kpi__valor">{STATUS_CLIENTE[cliente.status]}</strong>
+            </div>
+          </div>
+          <div className="posto__acoes">
+            <button
+              className="btn btn--gigante btn--sucesso"
+              onClick={() => onAceitarReparo(cliente.id)}
+            >
+              Aceitar ordem de serviço
+            </button>
+            <button className="btn" onClick={() => onRecusar(cliente.id)}>
+              Dispensar
+            </button>
           </div>
         </>
       )}
     </section>
+  );
+}
+
+function CartaoFila({
+  cliente,
+  selecionado,
+  produto,
+  onSelecionar,
+}: {
+  cliente: Customer;
+  selecionado: boolean;
+  produto?: Product;
+  onSelecionar: (id: string) => void;
+}) {
+  const paciencia = Math.round(cliente.patience);
+  const classePaciencia =
+    paciencia > 60 ? "ok" : paciencia > 30 ? "alerta" : "critico";
+  const atendivel = cliente.status === "waiting";
+
+  return (
+    <button
+      className={`cliente cliente--botao ${selecionado ? "cliente--selecionado" : ""}`}
+      onClick={() => onSelecionar(cliente.id)}
+      disabled={!atendivel}
+    >
+      <span className="cliente__topo">
+        <span className="cliente__nome">{cliente.name}</span>
+        <span className={`urgencia urgencia--${cliente.urgency}`}>
+          {URGENCIA[cliente.urgency]}
+        </span>
+      </span>
+      <span className="cliente__detalhe">
+        {cliente.needsProduct
+          ? `Quer ${produto?.name ?? cliente.needsProduct} · até ${formatarMoeda(cliente.budget)}`
+          : "Traz um equipamento para reparo"}
+      </span>
+      <span className="cliente__detalhe">{STATUS_CLIENTE[cliente.status]}</span>
+      <span className="barra barra--paciencia">
+        <span
+          className={`barra__preenchimento barra__preenchimento--${classePaciencia}`}
+          style={{ width: `${paciencia}%` }}
+        />
+      </span>
+    </button>
   );
 }
 
@@ -848,54 +1012,122 @@ function OportunidadeCard({ oportunidade }: { oportunidade: Opportunity }) {
   );
 }
 
-function ClienteCard({
-  cliente,
-  agora,
-  precoPedido,
-  nomeProduto,
+function ModalFechamento({
+  relatorio,
+  temRelatorio,
+  podeContinuar,
+  proximoDia,
+  onContinuar,
+  onPreparar,
 }: {
-  cliente: Customer;
-  agora: number;
-  precoPedido?: number;
-  nomeProduto?: string;
+  relatorio: ShiftReport | null;
+  temRelatorio: boolean;
+  podeContinuar: boolean;
+  proximoDia: number;
+  onContinuar: () => void;
+  onPreparar: () => void;
 }) {
-  const espera = Math.max(0, Math.round(agora - cliente.arrivalTime));
-  const paciencia = Math.round(cliente.patience);
-  const classePaciencia =
-    paciencia > 60
-      ? "valor--positivo"
-      : paciencia > 30
-        ? "valor--alerta"
-        : "valor--negativo";
-  const semOrcamento =
-    precoPedido !== undefined && precoPedido > cliente.budget;
-
   return (
-    <article className="cliente">
-      <div className="cliente__topo">
-        <h3 className="cliente__nome">{cliente.name}</h3>
-        <span className={`linha__valor ${classePaciencia}`}>{paciencia}%</span>
-      </div>
-      {cliente.needsProduct && (
-        <p className="cliente__detalhe">
-          Quer comprar: <strong>{nomeProduto ?? cliente.needsProduct}</strong>
-          {precoPedido !== undefined && ` por ${formatarMoeda(precoPedido)}`}
-        </p>
-      )}
-      {cliente.needsService && (
-        <p className="cliente__detalhe">
-          Precisa de: <strong>reparo</strong>
-        </p>
-      )}
-      {cliente.needsProduct && (
-        <p className={`cliente__detalhe ${semOrcamento ? "valor--negativo" : ""}`}>
-          Orçamento: <strong>{formatarMoeda(cliente.budget)}</strong>
-          {semOrcamento && " — acima do orçamento"}
-        </p>
-      )}
-      <p className="cliente__detalhe">
-        {STATUS_CLIENTE[cliente.status]} há <strong>{espera}s</strong> de jogo
-      </p>
-    </article>
+    <div className="fechamento">
+      <section className="fechamento__card">
+        <p className="palco__etiqueta">Fim do turno</p>
+        <h2 className="palco__titulo">
+          {relatorio
+            ? relatorio.goalReached
+              ? `Dia ${relatorio.day}: meta batida`
+              : `Dia ${relatorio.day}: meta não batida`
+            : "Turno encerrado"}
+        </h2>
+
+        {relatorio ? (
+          <>
+            <div className="fechamento__kpis">
+              <div className="kpi">
+                <span className="kpi__rotulo">Receita</span>
+                <strong className="kpi__valor valor--ciano">
+                  {formatarMoeda(relatorio.revenue)}
+                </strong>
+              </div>
+              <div className="kpi">
+                <span className="kpi__rotulo">Lucro</span>
+                <strong
+                  className={`kpi__valor ${
+                    relatorio.profit < 0 ? "valor--negativo" : "valor--positivo"
+                  }`}
+                >
+                  {formatarMoeda(relatorio.profit)}
+                </strong>
+              </div>
+              <div className="kpi">
+                <span className="kpi__rotulo">Meta</span>
+                <strong className="kpi__valor">{formatarMoeda(relatorio.goal)}</strong>
+              </div>
+              <div className="kpi">
+                <span className="kpi__rotulo">Vendas</span>
+                <strong className="kpi__valor">{relatorio.sales}</strong>
+              </div>
+              <div className="kpi">
+                <span className="kpi__rotulo">Reparos</span>
+                <strong className="kpi__valor">{relatorio.repairs}</strong>
+              </div>
+              <div className="kpi">
+                <span className="kpi__rotulo">Clientes perdidos</span>
+                <strong className="kpi__valor valor--negativo">
+                  {relatorio.customersLost}
+                </strong>
+              </div>
+              <div className="kpi">
+                <span className="kpi__rotulo">Reputação</span>
+                <strong
+                  className={`kpi__valor ${
+                    relatorio.reputationChange < 0
+                      ? "valor--negativo"
+                      : "valor--positivo"
+                  }`}
+                >
+                  {relatorio.reputationChange >= 0 ? "+" : ""}
+                  {Math.round(relatorio.reputationChange)}
+                </strong>
+              </div>
+            </div>
+
+            {relatorio.topOpportunity && (
+              <article className="oportunidade oportunidade--high fechamento__dica">
+                <div className="oportunidade__topo">
+                  <h3 className="oportunidade__titulo">
+                    <Icone d={ICONES.estrela} /> {relatorio.topOpportunity.title}
+                  </h3>
+                </div>
+                <p className="oportunidade__descricao">
+                  {relatorio.topOpportunity.description}
+                </p>
+                <p className="oportunidade__acao">
+                  → {relatorio.topOpportunity.recommendation}
+                </p>
+              </article>
+            )}
+          </>
+        ) : (
+          <p className="palco__texto">
+            {temRelatorio
+              ? "O núcleo não devolveu números para este turno."
+              : "O relatório do turno ainda não está disponível no GameWorld (getShiftReport)."}
+          </p>
+        )}
+
+        <div className="fechamento__acoes">
+          <button className="btn btn--gigante" onClick={onPreparar}>
+            Repor estoque antes
+          </button>
+          <button
+            className="btn btn--gigante btn--sucesso"
+            onClick={onContinuar}
+            disabled={!podeContinuar}
+          >
+            Abrir o dia {proximoDia}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
