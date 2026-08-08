@@ -796,9 +796,11 @@ function AtendimentoCard({
             <button className="btn btn--ativo" disabled={!podeCobrarCheio} onClick={() => onSell(precoCheio)}>
               Vender por {formatarMoeda(precoCheio)}
             </button>
-            <button className="btn" disabled={!podeDarDesconto} onClick={() => onSell(desconto)}>
-              Negociar por {formatarMoeda(desconto)}
-            </button>
+            {podeDarDesconto && (
+              <button className="btn" onClick={() => onSell(desconto)}>
+                Negociar por {formatarMoeda(desconto)}
+              </button>
+            )}
             <button className="btn btn--magenta" onClick={onDecline}>Recusar</button>
           </div>
         </>

@@ -225,12 +225,18 @@ export class GameWorld {
     const productTypes: ProductType[] = ["notebook", "mouse", "keyboard", "monitor", "headset", "webcam", "ssd", "ram"];
     const wantsProduct = Math.random() < 0.7;
     const type = productTypes[Math.floor(Math.random() * productTypes.length)];
+    const product = this.state.products.get(type)!;
     const id = `customer-${Math.floor(this.state.time * 1000)}-${Math.floor(Math.random() * 10_000)}`;
     this.state.customers.set(id, {
       id, name: `Cliente ${this.state.customers.size + 1}`, satisfaction: 55,
       needsProduct: wantsProduct ? type : undefined,
       needsService: wantsProduct ? undefined : "repair",
-      budget: wantsProduct ? this.randomBetween(80, 3_500) : 0,
+      // O orçamento é o máximo que o cliente aceita pagar pelo item pedido.
+      // Variar em torno do preço de vitrine cria negociações plausíveis para
+      // acessórios baratos e também para notebooks, sem misturar as faixas.
+      budget: wantsProduct
+        ? Math.round(product.sellingPrice * this.randomBetween(0.78, 1.18) * 100) / 100
+        : 0,
       patience: 100, arrivalTime: this.state.time, status: "waiting",
     });
     // Cada chegada é uma decisão. A loja aguarda o jogador em vez de agir sozinha.
