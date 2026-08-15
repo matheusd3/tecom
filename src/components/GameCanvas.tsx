@@ -107,7 +107,9 @@ export default function GameCanvas() {
       playerStation: handleRef.current?.getPlayerStation() ?? "loja",
       carriedProductName: (() => {
         const type = handleRef.current?.getCarriedProduct();
-        return type ? world.getState().products.get(type)?.name : undefined;
+        if (type) return world.getState().products.get(type)?.name;
+        const repairCustomerId = handleRef.current?.getCarriedRepairCustomerId();
+        return repairCustomerId ? `aparelho de ${world.getState().customers.get(repairCustomerId)?.name ?? "cliente"}` : undefined;
       })(),
       mapAction: mapActionRef.current,
     });
@@ -119,7 +121,10 @@ export default function GameCanvas() {
     const handle = handleRef.current;
     if (!world || !handle) return;
     const state = world.getState();
-    const customer = state.selectedCustomerId
+    const carriedRepairCustomerId = handle.getCarriedRepairCustomerId();
+    const customer = carriedRepairCustomerId
+      ? state.customers.get(carriedRepairCustomerId)
+      : state.selectedCustomerId
       ? state.customers.get(state.selectedCustomerId)
       : Array.from(state.customers.values()).find((item) => item.status === "waiting");
     let result: ActionResult;
@@ -139,8 +144,14 @@ export default function GameCanvas() {
         result = { ok: true, message: `Você pegou ${state.products.get(customer.needsProduct)?.name ?? "o produto"}. Vá ao balcão.` };
       }
     } else if (handle.getPlayerStation() === "balcao") {
-      if (!customer.needsProduct) {
-        result = { ok: false, message: "Este é um reparo: leve o cliente para a bancada técnica." };
+      if (carriedRepairCustomerId) {
+        result = world.returnRepairToCustomer(carriedRepairCustomerId);
+        if (result.ok) handle.putDownProduct();
+      } else if (customer.needsService && customer.status === "waiting") {
+        result = world.receiveRepair(customer.id);
+        if (result.ok) handle.pickUpRepair(customer.id);
+      } else if (!customer.needsProduct) {
+        result = { ok: false, message: "Receba o aparelho deste cliente no balcão antes de levá-lo à assistência." };
       } else if (handle.getCarriedProduct() !== customer.needsProduct) {
         result = { ok: false, message: "Pegue o produto pedido nas prateleiras antes de fechar a venda." };
       } else {
@@ -150,11 +161,19 @@ export default function GameCanvas() {
         if (result.ok) handle.putDownProduct();
       }
     } else if (handle.getPlayerStation() === "bancada") {
-      if (!customer.needsService) {
-        result = { ok: false, message: "Este cliente quer comprar: pegue o item na prateleira." };
+      if (carriedRepairCustomerId) {
+        result = world.acceptRepair(carriedRepairCustomerId);
+        if (result.ok) handle.putDownProduct();
       } else {
-        world.selectCustomer(customer.id);
-        result = world.acceptRepair(customer.id);
+        const readyRepair = state.repairs.find((repair) => repair.status === "ready");
+        if (readyRepair) {
+          result = world.collectCompletedRepair(readyRepair.customerId);
+          if (result.ok) handle.pickUpRepair(readyRepair.customerId);
+        } else if (!customer.needsService) {
+        result = { ok: false, message: "Este cliente quer comprar: pegue o item na prateleira." };
+        } else {
+          result = { ok: false, message: "Receba o aparelho no balcão e traga-o até esta bancada." };
+        }
       }
     } else {
       result = { ok: false, message: "Aproxime-se do balcão, das prateleiras ou da bancada para usar E." };
@@ -306,11 +325,22 @@ export default function GameCanvas() {
   const aceitarReparo = useCallback(
     (id: string): ActionResult => {
       const world = worldRef.current;
-      if (!world) return FALHA_SEM_NUCLEO;
-      if (handleRef.current?.getPlayerStation() !== "bancada") {
-        return { ok: false, message: "Vá até a bancada técnica para aceitar o reparo." };
+      const handle = handleRef.current;
+      if (!world || !handle) return FALHA_SEM_NUCLEO;
+      if (handle.getPlayerStation() === "balcao") {
+        const resultado = world.receiveRepair(id);
+        if (resultado.ok) handle.pickUpRepair(id);
+        sincronizar();
+        return resultado;
+      }
+      if (handle.getPlayerStation() !== "bancada") {
+        return { ok: false, message: "No balcão, receba o aparelho. Na bancada, entregue-o ao técnico." };
+      }
+      if (handle.getCarriedRepairCustomerId() !== id) {
+        return { ok: false, message: "Traga o aparelho recebido no balcão até a bancada." };
       }
       const resultado = world.acceptRepair(id);
+      if (resultado.ok) handle.putDownProduct();
       sincronizar();
       return resultado;
     },

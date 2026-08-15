@@ -29,7 +29,9 @@ export interface GameHandle {
   /** Posição atual do atendente para a interface contextual. */
   getPlayerStation(): PlayerStation;
   getCarriedProduct(): ProductType | undefined;
+  getCarriedRepairCustomerId(): string | undefined;
   pickUpProduct(productType: ProductType): boolean;
+  pickUpRepair(customerId: string): boolean;
   putDownProduct(): void;
   /** Avança a simulação e a animação da cena. deltaSeconds em segundos reais. */
   update(deltaSeconds: number): void;
@@ -81,6 +83,7 @@ export async function createGameScene(
   const player = criarAtendente(scene);
 
   const world = new GameWorld();
+  const repairPiles = criarPilhasDeReparo(scene, world);
   gameWorld = world;
 
   return {
@@ -88,8 +91,8 @@ export async function createGameScene(
     world,
     update(deltaSeconds: number) {
       world.update(deltaSeconds);
-
       player.update(deltaSeconds);
+      repairPiles.update();
     },
     getPlayerStation() {
       return player.station();
@@ -97,8 +100,14 @@ export async function createGameScene(
     getCarriedProduct() {
       return player.carriedProduct();
     },
+    getCarriedRepairCustomerId() {
+      return player.carriedRepairCustomerId();
+    },
     pickUpProduct(productType) {
       return player.pickUpProduct(productType);
+    },
+    pickUpRepair(customerId) {
+      return player.pickUpRepair(customerId);
     },
     putDownProduct() {
       player.putDownProduct();
@@ -199,6 +208,38 @@ function criarBancadaTecnica(scene: Scene): void {
   monitor.material = matMonitor;
 }
 
+function criarPilhasDeReparo(scene: Scene, world: GameWorld): { update(): void } {
+  const aguardando = criarCaixasDePilha(scene, "fila-assistencia", CORAL);
+  const prontos = criarCaixasDePilha(scene, "prontos-assistencia", CIANO);
+  const organizar = (caixas: Mesh[], quantidade: number, origem: Vector3) => {
+    caixas.forEach((caixa, index) => {
+      caixa.setEnabled(index < quantidade);
+      if (index < quantidade) {
+        caixa.position = new Vector3(origem.x + (index % 3) * 1.25, 0.75 + Math.floor(index / 3) * 0.75, origem.z);
+      }
+    });
+  };
+  return {
+    update() {
+      const repairs = world.getState().repairs;
+      organizar(aguardando, repairs.filter((repair) => repair.status === "queued").length, new Vector3(21.5, 0, 12.5));
+      organizar(prontos, repairs.filter((repair) => repair.status === "ready").length, new Vector3(28, 0, 12.5));
+    },
+  };
+}
+
+function criarCaixasDePilha(scene: Scene, name: string, color: Color3): Mesh[] {
+  return Array.from({ length: 6 }, (_, index) => {
+    const caixa = CreateBox(`${name}-${index}`, { width: 1.05, height: 0.65, depth: 0.9 }, scene);
+    const material = new StandardMaterial(`mat-${name}-${index}`, scene);
+    material.disableLighting = true;
+    material.emissiveColor = color.scale(0.8);
+    caixa.material = material;
+    caixa.setEnabled(false);
+    return caixa;
+  });
+}
+
 function criarFachadaColorida(scene: Scene): void {
   const cores = [CORAL, AMARELO, AZUL_LOJA, LIMA, CORAL, AMARELO];
   cores.forEach((color, index) => {
@@ -220,7 +261,9 @@ function criarAtendente(scene: Scene): {
   update(deltaSeconds: number): void;
   station(): PlayerStation;
   carriedProduct(): ProductType | undefined;
+  carriedRepairCustomerId(): string | undefined;
   pickUpProduct(productType: ProductType): boolean;
+  pickUpRepair(customerId: string): boolean;
   putDownProduct(): void;
   dispose(): void;
 } {
@@ -261,7 +304,7 @@ function criarAtendente(scene: Scene): {
   materialCaixa.emissiveColor = LIMA;
   caixa.material = materialCaixa;
   caixa.setEnabled(false);
-  let produtoCarregado: ProductType | undefined;
+  let itemCarregado: { productType?: ProductType; repairCustomerId?: string } | undefined;
 
   const pressed = new Set<string>();
   const onKeyDown = (event: KeyboardEvent) => {
@@ -296,16 +339,25 @@ function criarAtendente(scene: Scene): {
       return "loja";
     },
     carriedProduct() {
-      return produtoCarregado;
+      return itemCarregado?.productType;
+    },
+    carriedRepairCustomerId() {
+      return itemCarregado?.repairCustomerId;
     },
     pickUpProduct(productType) {
-      if (produtoCarregado) return false;
-      produtoCarregado = productType;
+      if (itemCarregado) return false;
+      itemCarregado = { productType };
+      caixa.setEnabled(true);
+      return true;
+    },
+    pickUpRepair(customerId) {
+      if (itemCarregado) return false;
+      itemCarregado = { repairCustomerId: customerId };
       caixa.setEnabled(true);
       return true;
     },
     putDownProduct() {
-      produtoCarregado = undefined;
+      itemCarregado = undefined;
       caixa.setEnabled(false);
     },
     dispose() {

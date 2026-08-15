@@ -41,6 +41,7 @@ export class GameWorld {
   private shiftReport: ShiftReport | null = null;
   private customerSequence = 0;
   private shiftHighlights: string[] = [];
+  private supportAttendantTimer = 0;
 
   constructor() {
     this.state = this.createInitialState();
@@ -56,6 +57,7 @@ export class GameWorld {
     this.updateWaitingCustomers(elapsed);
     this.generateCustomers(elapsed);
     this.processRepairs();
+    this.runSupportAttendant(elapsed);
     this.removeDepartedCustomers();
     this.processPayroll();
     this.updateDemand(elapsed);
@@ -105,7 +107,7 @@ export class GameWorld {
     this.shiftStartRevenue = this.state.totalRevenue;
     this.shiftStartExpenses = this.state.totalExpenses;
     this.shiftStartSales = this.state.sales.length;
-    this.shiftStartRepairs = this.state.repairs.filter((repair) => repair.completed).length;
+    this.shiftStartRepairs = this.state.repairs.filter((repair) => repair.status === "completed").length;
     this.shiftStartMissed = this.state.missedSales + this.state.missedRepairs;
     this.shiftStartReputation = this.state.reputation;
     this.shiftReport = null;
@@ -202,29 +204,65 @@ export class GameWorld {
     return { ok: true, message: `Venda fechada por R$ ${price.toFixed(2).replace(".", ",")}.${bonus}` };
   }
 
-  /** Aceita manualmente uma ordem de serviço para o próximo técnico livre. */
-  public acceptRepair(customerId: string): ActionResult {
+  /** Recebe o aparelho no balcão para que alguém o leve à assistência. */
+  public receiveRepair(customerId: string): ActionResult {
     const customer = this.state.customers.get(customerId);
     if (!customer?.needsService || customer.status !== "waiting") {
       return { ok: false, message: "Esse reparo não está disponível." };
     }
+    customer.status = "beingServed";
+    this.state.selectedCustomerId = customerId;
+    return { ok: true, message: "Aparelho recebido. Leve-o à bancada técnica." };
+  }
+
+  /** Deixa o aparelho na assistência. Se o técnico estiver ocupado, entra na pilha. */
+  public acceptRepair(customerId: string): ActionResult {
+    const customer = this.state.customers.get(customerId);
+    if (!customer?.needsService || customer.status !== "beingServed") {
+      return { ok: false, message: "Receba o aparelho no balcão antes de levá-lo à assistência." };
+    }
     const technician = this.availableEmployee("technician");
-    if (!technician) return { ok: false, message: "Todos os técnicos estão ocupados." };
-    const price = 180 + technician.skill * 1.5;
+    const skill = technician?.skill ?? 50;
+    const price = 180 + skill * 1.5;
     const cost = price * 0.2;
     const surgeDelay = this.state.activeEvent?.type === "powerSurge" && this.consumeEventUse("powerSurge") ? 18 : 0;
-    const duration = Math.max(18, 58 - technician.skill * 0.3) + surgeDelay;
-    const endTime = this.state.time + duration;
-    this.state.repairs.push({
+    const duration = Math.max(18, 58 - skill * 0.3) + surgeDelay;
+    const repair: RepairOrder = {
       id: `repair-${Math.floor(this.state.time * 1000)}`, customerId: customer.id,
-      serviceType: customer.needsService, technicianId: technician.id, startTime: this.state.time,
-      endTime, price, cost, profit: price - cost, completed: false,
-    });
+      serviceType: customer.needsService, technicianId: technician?.id, startTime: this.state.time,
+      endTime: undefined, price, cost, profit: price - cost, completed: false,
+      status: "queued",
+    };
+    this.state.repairs.push(repair);
     customer.status = "repairing";
-    technician.isBusy = true;
-    technician.busyUntil = endTime;
+    if (technician) this.startRepair(repair, technician, duration);
     if (surgeDelay) this.addHighlight("Pico de energia atrasou um reparo em 18 s.");
-    return { ok: true, message: `Ordem aceita: previsão de ${Math.ceil(duration)} s de jogo.${surgeDelay ? " O estabilizador resolveu testar sua paciência." : ""}` };
+    return technician
+      ? { ok: true, message: `Aparelho na bancada: previsão de ${Math.ceil(duration)} s de jogo.` }
+      : { ok: true, message: "Técnico ocupado: aparelho entrou na pilha da assistência." };
+  }
+
+  /** Retira um reparo pronto para devolvê-lo ao balcão. */
+  public collectCompletedRepair(customerId: string): ActionResult {
+    const repair = this.state.repairs.find((item) => item.customerId === customerId && item.status === "ready");
+    if (!repair) return { ok: false, message: "Nenhum aparelho pronto para retirar nesta bancada." };
+    repair.status = "returning";
+    return { ok: true, message: "Aparelho reparado retirado. Leve-o ao balcão." };
+  }
+
+  /** Devolve o aparelho reparado e só então fecha financeiramente a ordem. */
+  public returnRepairToCustomer(customerId: string): ActionResult {
+    const repair = this.state.repairs.find((item) => item.customerId === customerId && item.status === "returning");
+    const customer = this.state.customers.get(customerId);
+    if (!repair || !customer) return { ok: false, message: "Esse aparelho não está pronto para devolução." };
+    repair.status = "completed";
+    repair.completed = true;
+    this.recordRevenue(repair.price);
+    this.state.shiftProfit += repair.profit;
+    customer.satisfaction = 95;
+    customer.status = "leaving";
+    customer.departureTime = this.state.time + 2;
+    return { ok: true, message: "Reparo entregue no balcão e pagamento recebido." };
   }
 
   public declineCustomer(customerId: string): ActionResult {
@@ -243,6 +281,7 @@ export class GameWorld {
     this.lastOpportunityAt.clear();
     this.customerSequence = 0;
     this.shiftHighlights = [];
+    this.supportAttendantTimer = 0;
   }
 
   private createInitialState(): GameState {
@@ -323,28 +362,66 @@ export class GameWorld {
 
   private processRepairs(): void {
     for (const repair of this.state.repairs) {
-      if (repair.completed || !repair.endTime || repair.endTime > this.state.time) continue;
-      repair.completed = true;
-      this.recordRevenue(repair.price);
-      const technician = this.state.employees.get(repair.technicianId);
+      if (repair.status !== "inProgress" || !repair.endTime || repair.endTime > this.state.time) continue;
+      repair.status = "ready";
+      const technician = repair.technicianId ? this.state.employees.get(repair.technicianId) : undefined;
       if (technician) {
         technician.isBusy = false;
         technician.happiness = Math.min(100, technician.happiness + 2);
       }
-      const customer = this.state.customers.get(repair.customerId);
-      if (customer) {
-        customer.satisfaction = 95;
-        customer.status = "leaving";
-        customer.departureTime = this.state.time + 2;
-      }
-      this.state.shiftProfit += repair.profit;
+      this.addHighlight("Um aparelho ficou pronto na bancada; devolva-o no balcão para receber.");
     }
+    for (const repair of this.state.repairs.filter((item) => item.status === "queued")) {
+      const technician = this.availableEmployee("technician");
+      if (!technician) break;
+      const duration = Math.max(18, 58 - technician.skill * 0.3);
+      this.startRepair(repair, technician, duration);
+    }
+  }
 
+  private startRepair(repair: RepairOrder, technician: Employee, duration: number): void {
+    repair.technicianId = technician.id;
+    repair.startTime = this.state.time;
+    repair.endTime = this.state.time + duration;
+    repair.status = "inProgress";
+    technician.isBusy = true;
+    technician.busyUntil = repair.endTime;
+  }
+
+  /** Um segundo vendedor vira atendente auxiliar de logística dos reparos. */
+  private runSupportAttendant(elapsed: number): void {
+    const attendants = Array.from(this.state.employees.values()).filter((employee) => employee.role === "seller");
+    if (attendants.length < 2) {
+      this.state.supportTask = undefined;
+      return;
+    }
+    this.supportAttendantTimer += elapsed;
+    if (this.supportAttendantTimer < 7) return;
+    this.supportAttendantTimer = 0;
+    const helper = attendants.find((employee) => !employee.isBusy && employee.id !== "seller-1") ?? attendants[1];
+    if (!helper || helper.isBusy) return;
+    const waitingRepair = Array.from(this.state.customers.values()).find((customer) => customer.status === "waiting" && customer.needsService);
+    if (waitingRepair) {
+      this.receiveRepair(waitingRepair.id);
+      this.acceptRepair(waitingRepair.id);
+      helper.isBusy = true;
+      helper.busyUntil = this.state.time + 4;
+      this.state.supportTask = `${helper.name} levou um aparelho para a assistência.`;
+      return;
+    }
+    const readyRepair = this.state.repairs.find((repair) => repair.status === "ready");
+    if (readyRepair) {
+      this.collectCompletedRepair(readyRepair.customerId);
+      this.returnRepairToCustomer(readyRepair.customerId);
+      helper.isBusy = true;
+      helper.busyUntil = this.state.time + 4;
+      this.state.supportTask = `${helper.name} devolveu um reparo pronto ao balcão.`;
+    }
   }
 
   private releaseFinishedEmployees(): void {
     for (const employee of this.state.employees.values()) {
-      if (employee.isBusy && employee.busyUntil <= this.state.time) employee.isBusy = false;
+      if (employee.role !== "technician" && employee.isBusy && employee.busyUntil <= this.state.time) employee.isBusy = false;
       if (!employee.isBusy) this.state.idleEmployeeTime += this.state.timeSpeed;
     }
   }
@@ -376,7 +453,7 @@ export class GameWorld {
     const revenue = this.state.totalRevenue - this.shiftStartRevenue;
     const profit = this.state.shiftProfit - (this.state.totalExpenses - this.shiftStartExpenses);
     const sales = this.state.sales.length - this.shiftStartSales;
-    const repairs = this.state.repairs.filter((repair) => repair.completed).length - this.shiftStartRepairs;
+    const repairs = this.state.repairs.filter((repair) => repair.status === "completed").length - this.shiftStartRepairs;
     const customersLost = this.state.missedSales + this.state.missedRepairs - this.shiftStartMissed;
     const goalReached = revenue >= this.state.dailyGoal;
     if (goalReached) this.state.reputation = Math.min(100, this.state.reputation + 5);

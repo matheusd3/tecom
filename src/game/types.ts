@@ -6,6 +6,7 @@ export type EmployeeRole = "seller" | "technician" | "manager";
 export type CustomerStatus = "waiting" | "beingServed" | "repairing" | "leaving";
 export type GamePhase = "planning" | "active" | "summary";
 export type ShiftEventType = "influencer" | "couponLeak" | "powerSurge";
+export type RepairStatus = "queued" | "inProgress" | "ready" | "returning" | "completed";
 
 export interface Product {
   id: string;
@@ -81,13 +82,14 @@ export interface RepairOrder {
   id: string;
   customerId: string;
   serviceType: ServiceType;
-  technicianId: string;
+  technicianId?: string;
   startTime: number;
   endTime?: number;
   price: number;
   cost: number;
   profit: number;
   completed: boolean;
+  status: RepairStatus;
 }
 
 export interface GameState {
@@ -114,6 +116,7 @@ export interface GameState {
   customers: Map<string, Customer>;
   sales: Sale[];
   repairs: RepairOrder[];
+  supportTask?: string;
   missedSales: number;
   missedRepairs: number;
   idleEmployeeTime: number;

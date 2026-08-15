@@ -428,7 +428,9 @@ export function GameUI(props: GameUIProps) {
         <div className="controle-personagem" aria-live="polite">
           <strong>
             {props.carriedProductName
-              ? `Carregando ${props.carriedProductName} · leve ao balcão e aperte E`
+              ? props.carriedProductName.startsWith("aparelho")
+                ? `Carregando ${props.carriedProductName} · leve à bancada técnica e aperte E`
+                : `Carregando ${props.carriedProductName} · leve ao balcão e aperte E`
               : `Você está ${localDoAtendente[props.playerStation]} · WASD/setas para andar · E para interagir`}
           </strong>
         </div>
@@ -666,7 +668,7 @@ export function GameUI(props: GameUIProps) {
               ))}
               <div className="acoes">
                 <button className="btn btn--largo" onClick={() => contratar("seller")}>
-                  + Vendedor ({formatarMoeda(SALARIOS.seller * 2)})
+                  + Atendente auxiliar ({formatarMoeda(SALARIOS.seller * 2)})
                 </button>
                 <button
                   className="btn btn--largo"
@@ -676,9 +678,10 @@ export function GameUI(props: GameUIProps) {
                 </button>
               </div>
               <p className="nota">
-                Vendedor fecha vendas; técnico assume ordens de reparo. Sem gente
-                livre, o balcão trava.
+                Um atendente auxiliar leva aparelhos à assistência e devolve
+                reparos prontos automaticamente. Técnico assume o conserto.
               </p>
+              {gameState.supportTask && <p className="nota valor--positivo">→ {gameState.supportTask}</p>}
             </section>
 
             <section className="card">
@@ -951,7 +954,7 @@ function PostoAtendimento({
               className="btn btn--gigante btn--sucesso"
               onClick={() => onAceitarReparo(cliente.id)}
             >
-              Aceitar ordem de serviço
+              Receber aparelho
             </button>
             <button className="btn" onClick={() => onRecusar(cliente.id)}>
               Dispensar
