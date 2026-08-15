@@ -51,6 +51,10 @@ export function resetGameWorld(): void {
 const CIANO = new Color3(0, 0.9, 1);
 const MAGENTA = new Color3(1, 0.18, 0.59);
 const LIMA = new Color3(0.71, 1, 0.23);
+const AZUL_LOJA = new Color3(0.1, 0.48, 0.82);
+const CORAL = new Color3(1, 0.32, 0.2);
+const AMARELO = new Color3(1, 0.78, 0.16);
+const CREME = new Color3(0.96, 0.91, 0.78);
 
 export async function createGameScene(
   engine: Engine,
@@ -71,7 +75,7 @@ export async function createGameScene(
   camera.minZ = 0.1;
 
   const luz = new HemisphericLight("luz", new Vector3(0, 1, 0), scene);
-  luz.intensity = 1.1;
+  luz.intensity = 1.45;
 
   criarAmbiente(scene);
   const player = criarAtendente(scene);
@@ -112,11 +116,11 @@ export async function createGameScene(
 function criarAmbiente(scene: Scene): void {
   const chao = CreateGround("loja-chao", { width: 76, height: 58 }, scene);
   const matChao = new StandardMaterial("mat-loja-chao", scene);
-  matChao.diffuseColor = new Color3(0.025, 0.04, 0.055);
+  matChao.diffuseColor = CREME;
   matChao.specularColor = Color3.Black();
   chao.material = matChao;
 
-  // Grade sutil sobre o piso: decoração, não uma plataforma flutuante.
+  // Azulejos grandes dão leitura rápida de um jogo de gestão em tempo real.
   const grade = CreateGround(
     "grade",
     { width: 76, height: 58, subdivisions: 20 },
@@ -126,29 +130,30 @@ function criarAmbiente(scene: Scene): void {
   const matGrade = new StandardMaterial("matGrade", scene);
   matGrade.wireframe = true;
   matGrade.disableLighting = true;
-  matGrade.emissiveColor = CIANO.scale(0.22);
+  matGrade.emissiveColor = AZUL_LOJA.scale(0.62);
   grade.material = matGrade;
 
-  criarParede(scene, "parede-fundo", new Vector3(0, 6, 27), new Vector3(76, 12, 1), new Color3(0.04, 0.075, 0.09));
-  criarParede(scene, "parede-esquerda", new Vector3(-37.5, 6, 0), new Vector3(1, 12, 58), new Color3(0.03, 0.06, 0.075));
-  criarParede(scene, "parede-direita", new Vector3(37.5, 6, 0), new Vector3(1, 12, 58), new Color3(0.03, 0.06, 0.075));
+  criarParede(scene, "parede-fundo", new Vector3(0, 6, 27), new Vector3(76, 12, 1), AZUL_LOJA);
+  criarParede(scene, "parede-esquerda", new Vector3(-37.5, 6, 0), new Vector3(1, 12, 58), CORAL);
+  criarParede(scene, "parede-direita", new Vector3(37.5, 6, 0), new Vector3(1, 12, 58), CORAL);
 
   // Entrada frontal e vitrines laterais.
-  criarParede(scene, "vitrine-esquerda", new Vector3(-24, 5, -27), new Vector3(24, 10, 0.7), new Color3(0.035, 0.08, 0.1));
-  criarParede(scene, "vitrine-direita", new Vector3(24, 5, -27), new Vector3(24, 10, 0.7), new Color3(0.035, 0.08, 0.1));
-  criarParede(scene, "porta-loja", new Vector3(0, 4.5, -27), new Vector3(10, 9, 0.35), new Color3(0.06, 0.15, 0.18));
+  criarParede(scene, "vitrine-esquerda", new Vector3(-24, 5, -27), new Vector3(24, 10, 0.7), AMARELO);
+  criarParede(scene, "vitrine-direita", new Vector3(24, 5, -27), new Vector3(24, 10, 0.7), AMARELO);
+  criarParede(scene, "porta-loja", new Vector3(0, 4.5, -27), new Vector3(10, 9, 0.35), AZUL_LOJA);
+  criarFachadaColorida(scene);
 
-  criarPrateleira(scene, "estoque-a", new Vector3(-24, 0, 15), CIANO);
-  criarPrateleira(scene, "estoque-b", new Vector3(-10, 0, 15), MAGENTA);
-  criarPrateleira(scene, "estoque-c", new Vector3(4, 0, 15), LIMA);
-  criarPrateleira(scene, "estoque-d", new Vector3(18, 0, 15), CIANO);
+  criarPrateleira(scene, "estoque-a", new Vector3(-24, 0, 15), CORAL);
+  criarPrateleira(scene, "estoque-b", new Vector3(-10, 0, 15), AMARELO);
+  criarPrateleira(scene, "estoque-c", new Vector3(4, 0, 15), AZUL_LOJA);
+  criarPrateleira(scene, "estoque-d", new Vector3(18, 0, 15), LIMA);
 
   criarBalcao(scene);
   criarBancadaTecnica(scene);
 
-  criarEstacao(scene, "balcao", new Vector3(0, 0.25, -15), new Vector3(16, 0.5, 4), MAGENTA);
+  criarEstacao(scene, "balcao", new Vector3(0, 0.25, -15), new Vector3(16, 0.5, 4), CORAL);
   criarEstacao(scene, "bancada", new Vector3(26, 0.25, 9), new Vector3(9, 0.5, 6), LIMA);
-  criarEstacao(scene, "prateleira", new Vector3(-11, 0.2, 15), new Vector3(38, 0.4, 8), CIANO);
+  criarEstacao(scene, "prateleira", new Vector3(-11, 0.2, 15), new Vector3(38, 0.4, 8), AMARELO);
 }
 
 function criarParede(scene: Scene, name: string, position: Vector3, size: Vector3, color: Color3): void {
@@ -162,7 +167,7 @@ function criarParede(scene: Scene, name: string, position: Vector3, size: Vector
 }
 
 function criarPrateleira(scene: Scene, name: string, position: Vector3, accent: Color3): void {
-  const escuro = new Color3(0.06, 0.09, 0.11);
+  const escuro = new Color3(0.16, 0.22, 0.28);
   criarParede(scene, `${name}-corpo`, new Vector3(position.x, 3.5, position.z), new Vector3(10, 7, 2.2), escuro);
   for (let tier = 0; tier < 3; tier++) {
     criarParede(scene, `${name}-nivel-${tier}`, new Vector3(position.x, 1.45 + tier * 2, position.z - 1.22), new Vector3(9.2, 0.18, 0.35), accent.scale(0.55));
@@ -171,27 +176,34 @@ function criarPrateleira(scene: Scene, name: string, position: Vector3, accent: 
       caixa.position = new Vector3(position.x - 3 + item * 3, 0.75 + tier * 2, position.z - 1.35);
       const material = new StandardMaterial(`mat-${name}-produto-${tier}-${item}`, scene);
       material.disableLighting = true;
-      material.emissiveColor = (item === 1 ? accent : CIANO).scale(0.52);
+      material.emissiveColor = (item === 1 ? accent : item === 2 ? CORAL : AZUL_LOJA).scale(0.72);
       caixa.material = material;
     }
   }
 }
 
 function criarBalcao(scene: Scene): void {
-  criarParede(scene, "balcao-corpo", new Vector3(0, 1.7, -16.2), new Vector3(16, 3.2, 2.4), new Color3(0.09, 0.04, 0.085));
-  criarParede(scene, "balcao-tampo", new Vector3(0, 3.45, -16.2), new Vector3(16.5, 0.28, 2.7), MAGENTA.scale(0.48));
-  criarParede(scene, "balcao-faixa", new Vector3(0, 1.7, -17.45), new Vector3(14, 0.28, 0.15), MAGENTA);
+  criarParede(scene, "balcao-corpo", new Vector3(0, 1.7, -16.2), new Vector3(16, 3.2, 2.4), CORAL.scale(0.55));
+  criarParede(scene, "balcao-tampo", new Vector3(0, 3.45, -16.2), new Vector3(16.5, 0.28, 2.7), AMARELO);
+  criarParede(scene, "balcao-faixa", new Vector3(0, 1.7, -17.45), new Vector3(14, 0.28, 0.15), CREME);
 }
 
 function criarBancadaTecnica(scene: Scene): void {
-  criarParede(scene, "bancada-corpo", new Vector3(26, 1.55, 9), new Vector3(9, 3, 4.8), new Color3(0.045, 0.095, 0.06));
-  criarParede(scene, "bancada-tampo", new Vector3(26, 3.18, 9), new Vector3(9.4, 0.26, 5.15), LIMA.scale(0.45));
+  criarParede(scene, "bancada-corpo", new Vector3(26, 1.55, 9), new Vector3(9, 3, 4.8), AZUL_LOJA.scale(0.64));
+  criarParede(scene, "bancada-tampo", new Vector3(26, 3.18, 9), new Vector3(9.4, 0.26, 5.15), LIMA);
   const monitor = CreateBox("bancada-monitor", { width: 2.8, height: 1.8, depth: 0.22 }, scene);
   monitor.position = new Vector3(26, 4.25, 9.7);
   const matMonitor = new StandardMaterial("mat-bancada-monitor", scene);
   matMonitor.disableLighting = true;
   matMonitor.emissiveColor = LIMA.scale(0.65);
   monitor.material = matMonitor;
+}
+
+function criarFachadaColorida(scene: Scene): void {
+  const cores = [CORAL, AMARELO, AZUL_LOJA, LIMA, CORAL, AMARELO];
+  cores.forEach((color, index) => {
+    criarParede(scene, `faixa-fachada-${index}`, new Vector3(-27.5 + index * 11, 10.5, -27.45), new Vector3(10.5, 1.6, 0.2), color);
+  });
 }
 
 function criarEstacao(scene: Scene, name: string, position: Vector3, size: Vector3, color: Color3): void {
