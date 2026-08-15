@@ -1,8 +1,11 @@
 // player.ts — o atendente controlado pelo jogador.
 //
 // Movimento em corredor: WASD/setas, velocidade constante e colisão por
-// retângulo resolvida eixo a eixo. Não há física — quando um eixo esbarra, só
-// aquele eixo é cancelado, então o boneco desliza pela parede em vez de travar.
+// retângulo com empurrão, para o boneco deslizar pelos móveis em vez de grudar.
+//
+// Este módulo cuida só de andar e de mostrar o que está sendo carregado. Quem
+// decide o que a tecla E faz em cada estação é o GameCanvas, que é quem tem o
+// GameWorld na mão.
 
 import {
   INICIO_JOGADOR,
@@ -26,12 +29,8 @@ export interface Jogador {
   dispose(): void;
 }
 
-interface Ganchos {
-  /** Chamado quando o atendente entra ou sai de uma estação. */
-  aoMudarEstacao(estacao: Estacao | null): void;
-  /** Chamado quando ele aperta E dentro de uma estação. */
-  aoInteragir(estacao: Estacao): void;
-}
+/** Avisa a cena quando o atendente entra ou sai de uma estação. */
+type AoMudarEstacao = (estacao: Estacao | null) => void;
 
 const TECLAS_MOVIMENTO: Record<string, { x: number; z: number }> = {
   KeyW: { x: 0, z: 1 },
@@ -44,8 +43,6 @@ const TECLAS_MOVIMENTO: Record<string, { x: number; z: number }> = {
   ArrowRight: { x: 1, z: 0 },
 };
 
-const TECLAS_ACAO = new Set(["KeyE", "Space"]);
-
 /** O jogo não pode roubar o teclado de quem está digitando um preço. */
 function digitando(alvo: EventTarget | null): boolean {
   const el = alvo as HTMLElement | null;
@@ -54,7 +51,10 @@ function digitando(alvo: EventTarget | null): boolean {
   return tag === "input" || tag === "textarea" || tag === "select" || el.isContentEditable;
 }
 
-export function criarJogador(fabrica: FabricaDePessoas, ganchos: Ganchos): Jogador {
+export function criarJogador(
+  fabrica: FabricaDePessoas,
+  aoMudarEstacao: AoMudarEstacao
+): Jogador {
   const personagem = fabrica.criar({
     nome: "Atendente",
     roupa: PALETA.ciano,
@@ -74,16 +74,9 @@ export function criarJogador(fabrica: FabricaDePessoas, ganchos: Ganchos): Jogad
 
   const aoPressionar = (e: KeyboardEvent) => {
     if (digitando(e.target) || e.ctrlKey || e.altKey || e.metaKey) return;
-    if (TECLAS_MOVIMENTO[e.code]) {
-      pressionadas.add(e.code);
-      e.preventDefault();
-      return;
-    }
-    if (TECLAS_ACAO.has(e.code)) {
-      // Espaço com um botão focado dispararia o botão: melhor segurar o evento.
-      e.preventDefault();
-      if (!e.repeat && estacaoAtual) ganchos.aoInteragir(estacaoAtual);
-    }
+    if (!TECLAS_MOVIMENTO[e.code]) return;
+    pressionadas.add(e.code);
+    e.preventDefault();
   };
 
   const aoSoltar = (e: KeyboardEvent) => {
@@ -138,7 +131,7 @@ export function criarJogador(fabrica: FabricaDePessoas, ganchos: Ganchos): Jogad
         estacaoAtual = estacao;
         jogador.estacao = estacao;
         personagem.destacar(estacao !== null);
-        ganchos.aoMudarEstacao(estacao);
+        aoMudarEstacao(estacao);
       }
     },
 

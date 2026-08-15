@@ -1,11 +1,20 @@
 # Cenários de validação do núcleo
 
-1. **Atendimento manual:** iniciar o jogo, retomar o relógio e esperar um cliente. Confirmar que o relógio pausa automaticamente e a mesa de atendimento mostra o pedido, orçamento, custo e estoque.
-2. **Venda:** clicar em `Vender` para um cliente com orçamento suficiente e confirmar que caixa e receita aumentam pelo preço escolhido; estoque diminui em uma unidade.
-3. **Negociação:** para um cliente cujo orçamento seja menor que o preço de vitrine, mas maior que o custo, confirmar que o botão `Negociar` fecha a venda pelo orçamento do cliente. Ofertas abaixo do custo devem ficar indisponíveis.
-4. **Recusa e estoque:** recusar um cliente ou atender um pedido sem estoque; confirmar que o cliente sai, a venda perdida aumenta e o consultor sugere reposição quando aplicável.
-5. **Reparo manual:** aceitar um reparo na mesa de atendimento; confirmar que um técnico fica ocupado, a ordem entra em andamento e a receita só aparece ao concluir.
-6. **Compra:** comprar estoque; confirmar redução imediata do caixa e aumento de despesas, sem alteração em receita.
-7. **Fila técnica:** aceitar um reparo e avançar o tempo; quando o técnico estiver ocupado, confirmar que outro reparo não pode ser aceito e que a contratação de técnico resolve o bloqueio.
-8. **Salários:** avançar até o mês seguinte; confirmar uma única cobrança de todos os salários e que a cobrança usa o tempo do jogo, inclusive com o navegador aberto por muito tempo.
-9. **Pausa:** pausar; confirmar que tempo, fila, paciência, reparos e caixa não são alterados.
+## Ciclo completo
+
+1. **Preparação → turno:** abrir o jogo, ajustar um preço ou comprar estoque e clicar em **Abrir a loja**. Confirmar o cronômetro em 02:00, meta, reputação e caixa visíveis.
+2. **Fila com pressão:** esperar até três clientes. Confirmar que urgência alta reduz a paciência mais depressa e que selecionar um cartão muda o posto de atendimento.
+3. **Venda e negociação:** atender um pedido com orçamento suficiente. A venda deve aumentar caixa, receita do turno e lucro, além de consumir uma unidade. Para orçamento abaixo da vitrine, vender pelo teto do cliente; ofertas abaixo do custo precisam ser recusadas.
+4. **Reparo:** aceitar uma ordem e avançar o relógio. O técnico fica ocupado e a receita/lucro entram apenas ao concluir. Um segundo reparo enquanto o técnico está ocupado deve informar o bloqueio.
+5. **Consequência de recusa:** dispensar um cliente. Confirmar uma venda/reparo perdido, a mensagem de consequência e queda de reputação (maior para urgência alta).
+6. **Consequência de espera:** deixar um cliente aguardando até a paciência zerar. Confirmar que ele sai, conta como perdido e reduz reputação; o cliente selecionado não pode continuar no balcão depois de sair.
+7. **Evento TechTok:** iniciar novos turnos até aparecer **Nina do TechTok** (ou criar o estado em teste). Fechar uma venda com ela e confirmar a mensagem de postagem, +4 de reputação e destaque no relatório. Se ela sair, a penalidade deve ser -7.
+8. **Eventos de caos:** no turno com **Cupom vazou**, os dois próximos compradores devem ter orçamento menor e história do cupom. No turno com **Pico de energia**, o primeiro reparo deve receber 18 s extras e a mensagem do estabilizador.
+9. **Fechamento → próximo dia:** deixar o cronômetro chegar a zero com alguém ainda na fila. Conferir receita, lucro (já descontando custo dos itens), clientes perdidos e reputação; quem ficou esperando precisa sair no fechamento, sem atravessar magicamente para o próximo dia. Abrir o dia seguinte e confirmar nova meta e cronômetro reiniciado.
+
+## Regressões
+
+1. **Compra:** comprar estoque; confirmar redução imediata do caixa e aumento de despesas, sem alteração em receita.
+2. **Salários:** avançar até o mês seguinte; confirmar uma única cobrança de todos os salários e que ela usa o tempo do jogo.
+3. **Pausa:** pausar; confirmar que tempo, fila, paciência, reparos e caixa não são alterados.
+4. **Identidade:** deixar clientes entrarem e saírem por mais de uma fila. Os nomes exibidos devem permanecer únicos durante a sessão, mesmo quando a fila é limpa.

@@ -732,7 +732,7 @@ button {
 .aviso {
   position: absolute;
   left: 50%;
-  bottom: 24px;
+  top: calc(var(--topo-total) + 52px);
   transform: translateX(-50%);
   padding: 9px 18px;
   border-radius: 8px;
@@ -1286,7 +1286,7 @@ button {
   border: 1px solid currentColor;
 }
 
-.estacao-chip--livre {
+.estacao-chip--loja {
   color: var(--texto-fraco);
   border-color: rgba(139, 163, 173, 0.4);
 }
@@ -1301,6 +1301,20 @@ button {
 .estacao-chip--assistencia {
   color: var(--magenta);
   background: rgba(255, 46, 151, 0.12);
+}
+
+/* O que está na mão do atendente manda no próximo passo: fica em destaque. */
+.carga-atual {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 200, 87, 0.5);
+  background: rgba(255, 200, 87, 0.12);
+  color: var(--ambar);
+  font-size: 11px;
+}
+
+.carga-atual strong {
+  font-weight: 700;
 }
 
 /* ---------- Telas estreitas ---------- */

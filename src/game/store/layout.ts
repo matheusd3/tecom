@@ -113,11 +113,15 @@ export const FILA: Ponto[] = [
   { x: -1.6, z: -10.6 },
 ];
 
-/** Onde os clientes esperam enquanto o aparelho está em reparo. */
+/**
+ * Onde o cliente espera depois de entregar o aparelho. Fica no cantinho de
+ * espera, no meio do salão: cliente nenhum entra na área da assistência — quem
+ * leva e busca o aparelho é o atendente.
+ */
 export const ESPERA_REPARO: Ponto[] = [
-  { x: 3.4, z: 6.8 },
-  { x: 5.6, z: 5.6 },
-  { x: 1.6, z: 5 },
+  { x: 5.2, z: 1.5 },
+  { x: 5.2, z: 3.2 },
+  { x: 7.6, z: 3.6 },
 ];
 
 // ---------------------------------------------------------------- consultas

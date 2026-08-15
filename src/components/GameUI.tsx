@@ -5,7 +5,7 @@
 // só lê o estado publicado pelo GameWorld e chama os métodos dele.
 
 import { useEffect, useState } from "react";
-import type { Estacao } from "@/game/scene";
+import type { PlayerStation } from "@/game/scene";
 import type {
   ActionResult,
   Customer,
@@ -32,7 +32,11 @@ interface GameUIProps {
   shiftReport: ShiftReport | null;
   capacidades: Capacidades;
   /** Onde o atendente está parado na loja 3D. */
-  estacao: Estacao | null;
+  playerStation: PlayerStation;
+  /** O que ele está carregando na mão, se estiver carregando algo. */
+  carriedProductName?: string;
+  /** Resposta da última interação feita pela tecla E dentro da loja. */
+  mapAction: ActionResult | null;
   onStartShift: () => void;
   onSelectCustomer: (id: string) => void;
   onSell: (id: string, preco: number) => ActionResult;
@@ -78,14 +82,15 @@ const URGENCIA: Record<Customer["urgency"], string> = {
   high: "urgente",
 };
 
-const ROTULO_ESTACAO: Record<Estacao, string> = {
+const ROTULO_ESTACAO: Record<PlayerStation, string> = {
   balcao: "no balcão",
-  estoque: "no estoque",
-  assistencia: "na assistência",
+  estoque: "nas prateleiras",
+  assistencia: "na bancada técnica",
+  loja: "andando pela loja",
 };
 
 /** Chegar numa estação abre o painel que serve para agir ali. */
-const ABA_DA_ESTACAO: Partial<Record<Estacao, AbaLateral>> = {
+const ABA_DA_ESTACAO: Partial<Record<PlayerStation, AbaLateral>> = {
   estoque: "estoque",
   assistencia: "equipe",
 };
@@ -165,7 +170,8 @@ function Icone({ d }: { d: string }) {
 }
 
 export function GameUI(props: GameUIProps) {
-  const { gameState, opportunities, shiftReport, capacidades, estacao } = props;
+  const { gameState, opportunities, shiftReport, capacidades } = props;
+  const estacao = props.playerStation;
 
   const [aba, setAba] = useState<AbaLateral>("estoque");
   const [lote, setLote] = useState(5);
@@ -186,9 +192,16 @@ export function GameUI(props: GameUIProps) {
   }, [diaDoRelatorio]);
 
   useEffect(() => {
-    const alvo = estacao ? ABA_DA_ESTACAO[estacao] : undefined;
+    const alvo = ABA_DA_ESTACAO[estacao];
     if (alvo) setAba(alvo);
   }, [estacao]);
+
+  // A resposta da tecla E vem do GameCanvas e usa o mesmo aviso dos botões.
+  const acaoNoMapa = props.mapAction;
+  useEffect(() => {
+    if (!acaoNoMapa) return;
+    setAviso({ texto: acaoNoMapa.message, tipo: acaoNoMapa.ok ? "ok" : "erro" });
+  }, [acaoNoMapa]);
 
   useEffect(() => {
     if (!aviso) return;
@@ -442,9 +455,18 @@ export function GameUI(props: GameUIProps) {
           <span className="tecla">E</span>
           interagir
         </span>
-        <span className={`estacao-chip estacao-chip--${estacao ?? "livre"}`}>
-          {estacao ? ROTULO_ESTACAO[estacao] : "andando pela loja"}
+        <span className={`estacao-chip estacao-chip--${estacao}`}>
+          {ROTULO_ESTACAO[estacao]}
         </span>
+        {/* Carregando algo, o próximo passo é o que mais importa na tela. */}
+        {props.carriedProductName && (
+          <span className="carga-atual">
+            carregando <strong>{props.carriedProductName}</strong> ·{" "}
+            {props.carriedProductName.startsWith("aparelho")
+              ? "leve à bancada"
+              : "leve ao balcão"}
+          </span>
+        )}
       </div>
 
       {/* ---------- Palco central ---------- */}
@@ -679,7 +701,7 @@ export function GameUI(props: GameUIProps) {
               ))}
               <div className="acoes">
                 <button className="btn btn--largo" onClick={() => contratar("seller")}>
-                  + Vendedor ({formatarMoeda(SALARIOS.seller * 2)})
+                  + Atendente auxiliar ({formatarMoeda(SALARIOS.seller * 2)})
                 </button>
                 <button
                   className="btn btn--largo"
@@ -689,9 +711,12 @@ export function GameUI(props: GameUIProps) {
                 </button>
               </div>
               <p className="nota">
-                Vendedor fecha vendas; técnico assume ordens de reparo. Sem gente
-                livre, o balcão trava.
+                Um atendente auxiliar leva aparelhos à assistência e devolve
+                reparos prontos automaticamente. Técnico assume o conserto.
               </p>
+              {gameState.supportTask && (
+                <p className="nota valor--positivo">→ {gameState.supportTask}</p>
+              )}
             </section>
 
             <section className="card">
@@ -964,7 +989,7 @@ function PostoAtendimento({
               className="btn btn--gigante btn--sucesso"
               onClick={() => onAceitarReparo(cliente.id)}
             >
-              Aceitar ordem de serviço
+              Receber aparelho
             </button>
             <button className="btn" onClick={() => onRecusar(cliente.id)}>
               Dispensar

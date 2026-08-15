@@ -1,8 +1,9 @@
 // scene.ts — a loja 3D e a ponte com o GameWorld.
 //
 // A cena deixou de ser papel de parede: ela é a loja onde o atendente anda,
-// esbarra nos móveis e encontra os clientes da simulação. A interface HTML
-// continua sendo onde as decisões são tomadas.
+// esbarra nos móveis, pega produto na prateleira e leva aparelho até a bancada.
+// A interface HTML continua sendo onde as decisões são tomadas — quem manda na
+// economia é o GameWorld.
 //
 // Regras do contrato Babylon-in-React (ver manus-adaptations.md):
 //  - createGameScene(engine, canvas) devolve um GameHandle com { scene, dispose }.
@@ -24,20 +25,26 @@ import { construirLoja } from "./store/props";
 import { criarFabricaDePessoas } from "./store/characters";
 import { criarJogador } from "./store/player";
 import { criarMultidao } from "./store/crowd";
+import { criarEquipe } from "./store/staff";
 import { CORES_PRODUTO, PALETA, cor } from "./store/materials";
 import type { Estacao } from "./store/layout";
 
 export type { Estacao } from "./store/layout";
+
+/** Onde o atendente está parado. "loja" = andando pelos corredores. */
+export type PlayerStation = Estacao | "loja";
 
 export interface GameHandle {
   scene: Scene;
   world: GameWorld;
   /** Avança a simulação e a animação da cena. deltaSeconds em segundos reais. */
   update(deltaSeconds: number): void;
-  /** Avisa quando o atendente entra ou sai de uma estação da loja. */
-  aoMudarEstacao(callback: (estacao: Estacao | null) => void): void;
-  /** Avisa quando ele aperta E dentro de uma estação. */
-  aoInteragir(callback: (estacao: Estacao) => void): void;
+  getPlayerStation(): PlayerStation;
+  getCarriedProduct(): ProductType | undefined;
+  getCarriedRepairCustomerId(): string | undefined;
+  pickUpProduct(productType: ProductType): boolean;
+  pickUpRepair(customerId: string): boolean;
+  putDownProduct(): void;
   dispose(): void;
 }
 
@@ -65,8 +72,8 @@ const ORDEM_PRODUTOS: ProductType[] = [
   "ram",
 ];
 
-function corDoProduto(tipo: ProductType | undefined): string {
-  const indice = tipo ? ORDEM_PRODUTOS.indexOf(tipo) : -1;
+function corDoProduto(tipo: ProductType): string {
+  const indice = ORDEM_PRODUTOS.indexOf(tipo);
   return CORES_PRODUTO[(indice < 0 ? 0 : indice) % CORES_PRODUTO.length];
 }
 
@@ -115,28 +122,14 @@ export async function createGameScene(
   const world = new GameWorld();
   gameWorld = world;
 
-  let aoMudarEstacao: ((estacao: Estacao | null) => void) | null = null;
-  let aoInteragir: ((estacao: Estacao) => void) | null = null;
+  const equipe = criarEquipe(pessoas, world);
+  const jogador = criarJogador(pessoas, (estacao) => loja.destacarZona(estacao));
 
-  const jogador = criarJogador(pessoas, {
-    aoMudarEstacao(estacao) {
-      loja.destacarZona(estacao);
-      aoMudarEstacao?.(estacao);
-    },
-    aoInteragir(estacao) {
-      // Carregar é encenação: mostra o que o atendente está fazendo sem mexer
-      // em uma linha da economia do GameWorld.
-      if (estacao === "estoque") {
-        const alvo = proximoClienteComProduto(world);
-        jogador.definirCarga("produto", corDoProduto(alvo));
-      } else if (estacao === "assistencia") {
-        jogador.definirCarga(jogador.carga === "aparelho" ? null : "aparelho", "#b9c7d1");
-      } else if (estacao === "balcao") {
-        jogador.definirCarga(null);
-      }
-      aoInteragir?.(estacao);
-    },
-  });
+  // O que o atendente tem na mão. É a mesma informação que o GameCanvas usa
+  // para liberar (ou barrar) a ação de cada estação: sem o produto na mão não
+  // existe venda, e o aparelho só chega à bancada carregado por ele.
+  let produtoCarregado: ProductType | undefined;
+  let reparoCarregado: string | undefined;
 
   loja.destacarZona(jogador.estacao);
 
@@ -147,38 +140,53 @@ export async function createGameScene(
     update(deltaSeconds: number) {
       world.update(deltaSeconds);
       jogador.atualizar(deltaSeconds);
-      multidao.sincronizar(world.getState());
+      const estado = world.getState();
+      multidao.sincronizar(estado);
       multidao.atualizar(deltaSeconds);
+      equipe.atualizar(deltaSeconds);
+      loja.atualizarPilhas(estado);
     },
 
-    aoMudarEstacao(callback) {
-      aoMudarEstacao = callback;
-      callback(jogador.estacao);
+    getPlayerStation() {
+      return jogador.estacao ?? "loja";
     },
 
-    aoInteragir(callback) {
-      aoInteragir = callback;
+    getCarriedProduct() {
+      return produtoCarregado;
+    },
+
+    getCarriedRepairCustomerId() {
+      return reparoCarregado;
+    },
+
+    pickUpProduct(productType) {
+      if (produtoCarregado || reparoCarregado) return false;
+      produtoCarregado = productType;
+      jogador.definirCarga("produto", corDoProduto(productType));
+      return true;
+    },
+
+    pickUpRepair(customerId) {
+      if (produtoCarregado || reparoCarregado) return false;
+      reparoCarregado = customerId;
+      jogador.definirCarga("aparelho");
+      return true;
+    },
+
+    putDownProduct() {
+      produtoCarregado = undefined;
+      reparoCarregado = undefined;
+      jogador.definirCarga(null);
     },
 
     dispose() {
       jogador.dispose();
       multidao.dispose();
+      equipe.dispose();
       scene.dispose();
       if (gameWorld === world) {
         gameWorld = null;
       }
     },
   };
-}
-
-/** Qual produto o atendente pegaria agora — o do cliente da vez. */
-function proximoClienteComProduto(world: GameWorld): ProductType | undefined {
-  const estado = world.getState();
-  const selecionado = estado.selectedCustomerId
-    ? estado.customers.get(estado.selectedCustomerId)
-    : undefined;
-  if (selecionado?.needsProduct) return selecionado.needsProduct;
-  return Array.from(estado.customers.values()).find(
-    (cliente) => cliente.status === "waiting" && cliente.needsProduct
-  )?.needsProduct;
 }

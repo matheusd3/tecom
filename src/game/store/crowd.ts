@@ -78,13 +78,16 @@ export function criarMultidao(fabrica: FabricaDePessoas): Multidao {
           ]
         : aguardando;
 
-      const emReparo = emCena.filter((c) => c.status === "repairing");
+      // Quem já entregou o aparelho sai da fila e senta no cantinho de espera.
+      const esperando = emCena.filter(
+        (c) => c.status === "repairing" || c.status === "beingServed"
+      );
 
       const destinos = new Map<string, Ponto>();
       ordemFila.forEach((c, i) => {
         destinos.set(c.id, FILA[Math.min(i, FILA.length - 1)]);
       });
-      emReparo.forEach((c, i) => {
+      esperando.forEach((c, i) => {
         destinos.set(c.id, ESPERA_REPARO[Math.min(i, ESPERA_REPARO.length - 1)]);
       });
 
@@ -104,14 +107,16 @@ export function criarMultidao(fabrica: FabricaDePessoas): Multidao {
           visual.personagem.definirPedido(null);
           visual.personagem.definirPaciencia(null);
           visual.personagem.definirCarga(null);
-        } else if (cliente.status === "repairing") {
-          visual.personagem.definirPedido("reparo");
-          visual.personagem.definirPaciencia(null);
-        } else {
+        } else if (cliente.status === "waiting") {
           visual.personagem.definirPedido(cliente.needsProduct ? "produto" : "reparo");
           visual.personagem.definirPaciencia(cliente.patience / 100);
-          // Quem traz um aparelho aparece carregando o aparelho.
+          // Quem traz um aparelho aparece com ele na mão até entregar no balcão.
           visual.personagem.definirCarga(cliente.needsService ? "aparelho" : null, "#b9c7d1");
+        } else {
+          // Aparelho já entregue: ele espera no salão, sem relógio correndo.
+          visual.personagem.definirPedido("reparo");
+          visual.personagem.definirPaciencia(null);
+          visual.personagem.definirCarga(null);
         }
       }
 

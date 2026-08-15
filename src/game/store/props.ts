@@ -18,6 +18,7 @@ import "@babylonjs/core/Meshes/instancedMesh";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 
+import type { GameState } from "../types";
 import {
   ALTURA_PAREDE,
   LOJA,
@@ -45,6 +46,8 @@ import {
 export interface Loja {
   /** Acende o tapete e o letreiro da estação onde o atendente está. */
   destacarZona(estacao: Estacao | null): void;
+  /** Mostra no chão da bancada quantos aparelhos esperam e quantos ficaram prontos. */
+  atualizarPilhas(estado: GameState): void;
 }
 
 interface Tapete {
@@ -149,8 +152,11 @@ export function construirLoja(scene: Scene): Loja {
   bancadaTecnica(scene, mats, letreiros);
   estoque(scene, mats, letreiros);
   decoracao(scene, mats);
+  const pilhas = pilhasDeReparo(scene);
 
   return {
+    atualizarPilhas: pilhas.atualizar,
+
     destacarZona(estacao) {
       for (const [id, tapete] of tapetes) {
         const ativo = id === estacao;
@@ -459,6 +465,49 @@ function bancadaTecnica(
     neon(scene, "matPlacaAssistNeon", PALETA.magenta, 1.05)
   );
   letreiros.set("assistencia", moldura.material as StandardMaterial);
+}
+
+// ------------------------------------------------- pilhas da assistência
+
+/**
+ * Duas filas de aparelhos no chão, na frente da bancada: à esquerda o que ainda
+ * espera técnico, à direita o que já está pronto para voltar ao balcão. É o
+ * jeito de o jogador ver a fila da assistência sem abrir painel.
+ */
+function pilhasDeReparo(scene: Scene): { atualizar(estado: GameState): void } {
+  const CAPACIDADE = 4;
+  const criarFila = (nome: string, hex: string, xInicial: number): Mesh[] => {
+    const material = fosco(scene, `mat-${nome}`, hex, { brilho: 0.5 });
+    return Array.from({ length: CAPACIDADE }, (_, i) => {
+      const caixa = CreateBox(nome + i, { width: 0.8, height: 0.28, depth: 0.62 }, scene);
+      caixa.position.set(xInicial + i * 0.95, 0.16, MOVEIS.bancada.minZ - 0.5);
+      caixa.rotation.y = (i % 2 === 0 ? 1 : -1) * 0.12;
+      caixa.material = material;
+      caixa.setEnabled(false);
+      caixa.freezeWorldMatrix();
+      return caixa;
+    });
+  };
+
+  const aguardando = criarFila("reparoAguardando", PALETA.ambar, MOVEIS.bancada.minX + 0.6);
+  const prontos = criarFila("reparoPronto", PALETA.lima, MOVEIS.bancada.minX + 4.6);
+
+  const mostrar = (caixas: Mesh[], quantidade: number) => {
+    caixas.forEach((caixa, i) => caixa.setEnabled(i < quantidade));
+  };
+
+  return {
+    atualizar(estado) {
+      let esperando = 0;
+      let prontosAgora = 0;
+      for (const reparo of estado.repairs) {
+        if (reparo.status === "queued") esperando++;
+        else if (reparo.status === "ready") prontosAgora++;
+      }
+      mostrar(aguardando, esperando);
+      mostrar(prontos, prontosAgora);
+    },
+  };
 }
 
 // --------------------------------------------------------------- estoque

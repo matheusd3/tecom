@@ -5,6 +5,8 @@ export type ServiceType = "diagnosis" | "repair" | "upgrade" | "cleaning";
 export type EmployeeRole = "seller" | "technician" | "manager";
 export type CustomerStatus = "waiting" | "beingServed" | "repairing" | "leaving";
 export type GamePhase = "planning" | "active" | "summary";
+export type ShiftEventType = "influencer" | "couponLeak" | "powerSurge";
+export type RepairStatus = "queued" | "inProgress" | "ready" | "returning" | "completed";
 
 export interface Product {
   id: string;
@@ -53,6 +55,16 @@ export interface Customer {
   status: CustomerStatus;
   story: string;
   urgency: "low" | "medium" | "high";
+  /** Clientes excêntricos deixam consequências mais claras no turno. */
+  trait?: "influencer" | "couponHunter" | "panicked";
+}
+
+export interface ShiftEvent {
+  type: ShiftEventType;
+  title: string;
+  description: string;
+  /** Quantos clientes ainda são afetados. */
+  remainingUses: number;
 }
 
 export interface Sale {
@@ -70,13 +82,14 @@ export interface RepairOrder {
   id: string;
   customerId: string;
   serviceType: ServiceType;
-  technicianId: string;
+  technicianId?: string;
   startTime: number;
   endTime?: number;
   price: number;
   cost: number;
   profit: number;
   completed: boolean;
+  status: RepairStatus;
 }
 
 export interface GameState {
@@ -89,6 +102,9 @@ export interface GameState {
   shiftTimeRemaining: number;
   dailyGoal: number;
   reputation: number;
+  shiftRevenue: number;
+  shiftProfit: number;
+  activeEvent?: ShiftEvent;
   selectedCustomerId?: string;
   cash: number;
   totalRevenue: number;
@@ -100,6 +116,7 @@ export interface GameState {
   customers: Map<string, Customer>;
   sales: Sale[];
   repairs: RepairOrder[];
+  supportTask?: string;
   missedSales: number;
   missedRepairs: number;
   idleEmployeeTime: number;
@@ -134,6 +151,7 @@ export interface ShiftReport {
   reputationChange: number;
   goalReached: boolean;
   topOpportunity?: Opportunity;
+  highlights: string[];
 }
 
 export interface GameHandle {
