@@ -27,6 +27,7 @@ interface Instantaneo {
   opportunities: Opportunity[];
   shiftReport: ShiftReport | null;
   playerStation: PlayerStation;
+  playerPosition: { x: number; z: number };
   carriedProductName?: string;
   mapAction: ActionResult | null;
 }
@@ -87,6 +88,7 @@ export default function GameCanvas() {
     opportunities: [],
     shiftReport: null,
     playerStation: "loja",
+    playerPosition: { x: 0, z: 9 },
     mapAction: null,
   });
   const [capacidades, setCapacidades] = useState<Capacidades>({
@@ -105,6 +107,7 @@ export default function GameCanvas() {
       opportunities: [...world.getOpportunities()],
       shiftReport: lerRelatorio(world),
       playerStation: handleRef.current?.getPlayerStation() ?? "loja",
+      playerPosition: handleRef.current?.getPlayerPosition() ?? { x: 0, z: 9 },
       carriedProductName: (() => {
         const type = handleRef.current?.getCarriedProduct();
         return type ? world.getState().products.get(type)?.name : undefined;
@@ -377,6 +380,7 @@ export default function GameCanvas() {
           opportunities={instantaneo.opportunities}
           shiftReport={instantaneo.shiftReport}
           playerStation={instantaneo.playerStation}
+          playerPosition={instantaneo.playerPosition}
           carriedProductName={instantaneo.carriedProductName}
           mapAction={instantaneo.mapAction}
           capacidades={capacidades}

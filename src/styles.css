@@ -937,6 +937,79 @@ button {
   pointer-events: auto;
 }
 
+/* Durante o turno o cartão não pode esconder a loja: ele vira um painel
+   compacto no alto e deixa a maior parte do cenário livre para o atendente. */
+.fase-active .palco {
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 18px 22px;
+}
+
+.fase-active .palco__card {
+  width: min(470px, 100%);
+  padding: 16px;
+  background: rgba(12, 17, 23, 0.82);
+}
+
+.fase-active .posto__historia {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+}
+
+/* Avatar 2D espelha a posição do modelo 3D: permanece legível mesmo quando
+   a câmera está parcialmente coberta pelos painéis da loja. */
+.atendente-visual {
+  position: absolute;
+  z-index: 2;
+  width: 42px;
+  height: 62px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  filter: drop-shadow(0 0 9px rgba(0, 229, 255, 0.8));
+  pointer-events: none !important;
+  transition: left 0.12s linear, top 0.12s linear;
+}
+
+.atendente-visual__nome {
+  position: absolute;
+  top: -16px;
+  font-family: Orbitron, monospace;
+  font-size: 8px;
+  font-weight: 800;
+  color: var(--lima);
+  letter-spacing: 0.7px;
+}
+
+.atendente-visual__cabeca {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--magenta);
+  border-radius: 50%;
+  background: #321226;
+}
+
+.atendente-visual__corpo {
+  width: 28px;
+  height: 31px;
+  margin-top: 2px;
+  border: 2px solid var(--ciano);
+  border-radius: 8px 8px 5px 5px;
+  background: rgba(0, 229, 255, 0.25);
+}
+
+.atendente-visual__caixa {
+  position: absolute;
+  right: -8px;
+  bottom: 4px;
+  width: 16px;
+  height: 13px;
+  border: 2px solid var(--lima);
+  border-radius: 2px;
+  background: rgba(182, 255, 58, 0.24);
+}
+
 .palco__card {
   width: min(560px, 100%);
   max-height: 100%;

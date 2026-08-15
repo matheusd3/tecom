@@ -31,6 +31,7 @@ interface GameUIProps {
   opportunities: Opportunity[];
   shiftReport: ShiftReport | null;
   playerStation: PlayerStation;
+  playerPosition: { x: number; z: number };
   carriedProductName?: string;
   mapAction: ActionResult | null;
   capacidades: Capacidades;
@@ -517,6 +518,21 @@ export function GameUI(props: GameUIProps) {
               </p>
             </section>
           ))}
+        {emTurno && (
+          <div
+            className="atendente-visual"
+            style={{
+              left: `${Math.max(8, Math.min(92, 50 + props.playerPosition.x * 1.18))}%`,
+              top: `${Math.max(42, Math.min(88, 67 + props.playerPosition.z * 0.85))}%`,
+            }}
+            aria-label="Atendente controlado pelo jogador"
+          >
+            <span className="atendente-visual__nome">VOCÊ</span>
+            <span className="atendente-visual__cabeca" />
+            <span className="atendente-visual__corpo" />
+            {props.carriedProductName && <span className="atendente-visual__caixa" />}
+          </div>
+        )}
       </main>
 
       {/* ---------- Painel esquerdo: preparação ---------- */}
