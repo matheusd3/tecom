@@ -1039,6 +1039,17 @@ button {
   border-color: var(--lima);
 }
 
+/* ---------- Aprovação de desconto ---------- */
+
+.aprovacao {
+  border-color: var(--ambar);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6), 0 0 34px rgba(255, 200, 87, 0.18);
+}
+
+.aprovacao .palco__etiqueta {
+  color: var(--ambar);
+}
+
 /* ---------- Posto de atendimento ---------- */
 
 .posto {
@@ -1227,6 +1238,21 @@ button {
 
 .fechamento__dica {
   margin-bottom: 16px;
+}
+
+.fechamento__destaques {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--texto-fraco);
+}
+
+.fechamento__destaques li::marker {
+  color: var(--ciano);
 }
 
 .fechamento__acoes {

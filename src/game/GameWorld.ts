@@ -451,6 +451,20 @@ export class GameWorld {
     for (const customer of this.state.customers.values()) {
       if (customer.status === "waiting") this.loseCustomer(customer, "ficou sem atendimento até o fechamento");
     }
+    // Aparelho na assistência não vira pó no fechamento: o cliente continua na
+    // loja e o serviço retoma no próximo turno. O que estiver pronto pode ser
+    // devolvido no balcão mesmo com a loja fechada.
+    const naAssistencia = this.state.repairs.filter(
+      (repair) => repair.status !== "completed"
+    );
+    if (naAssistencia.length) {
+      const prontos = naAssistencia.filter((repair) => repair.status === "ready" || repair.status === "returning").length;
+      this.addHighlight(
+        prontos
+          ? `${naAssistencia.length} aparelho(s) na assistência — ${prontos} pronto(s) para devolver agora no balcão; o resto retoma no próximo turno.`
+          : `${naAssistencia.length} aparelho(s) continuam na assistência e o conserto retoma no próximo turno.`
+      );
+    }
     this.analyzeOpportunities();
     const revenue = this.state.totalRevenue - this.shiftStartRevenue;
     const profit = this.state.shiftProfit - (this.state.totalExpenses - this.shiftStartExpenses);

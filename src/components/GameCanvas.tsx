@@ -20,7 +20,7 @@ import type {
   EmployeeRole,
   ShiftReport,
 } from "@/game/types";
-import { GameUI, type Capacidades } from "./GameUI";
+import { GameUI, type Capacidades, type PedidoDesconto } from "./GameUI";
 
 interface Instantaneo {
   gameState: GameState | null;
@@ -95,6 +95,8 @@ export default function GameCanvas() {
     relatorio: false,
   });
   const [erro, setErro] = useState<string | null>(null);
+  /** Venda abaixo da vitrine esperando o "pode fechar" do jogador. */
+  const [pedidoDesconto, setPedidoDesconto] = useState<PedidoDesconto | null>(null);
 
   /** Copia o estado atual da simulação para o React. */
   const sincronizar = useCallback(() => {
@@ -113,6 +115,13 @@ export default function GameCanvas() {
       })(),
       mapAction: mapActionRef.current,
     });
+    // Se o cliente desistiu enquanto o desconto esperava resposta, o pedido
+    // morre com ele — senão o botão fecharia uma venda com quem já saiu.
+    setPedidoDesconto((atual) => {
+      if (!atual) return atual;
+      const cliente = world.getState().customers.get(atual.customerId);
+      return cliente?.status === "waiting" ? atual : null;
+    });
   }, []);
 
   /** A interação por teclado usa o cliente priorizado — ou o primeiro da fila. */
@@ -122,14 +131,24 @@ export default function GameCanvas() {
     if (!world || !handle) return;
     const state = world.getState();
     const carriedRepairCustomerId = handle.getCarriedRepairCustomerId();
+    const carriedProduct = handle.getCarriedProduct();
+    // A fila é a ordem de chegada; o cliente priorizado no painel vem antes.
+    const aguardando = Array.from(state.customers.values()).filter(
+      (item) => item.status === "waiting"
+    );
     const selectedCustomer = state.selectedCustomerId
       ? state.customers.get(state.selectedCustomerId)
       : undefined;
+    // Quem a tecla E atende: primeiro o que já está na mão, depois quem quer
+    // justamente o produto carregado, e só então a frente da fila. Sem isso o E
+    // tentava vender a caixa que está na mão para quem pediu outra coisa.
     const customer = carriedRepairCustomerId
       ? state.customers.get(carriedRepairCustomerId)
+      : carriedProduct
+      ? aguardando.find((item) => item.needsProduct === carriedProduct) ?? aguardando[0]
       : selectedCustomer?.status === "waiting"
       ? selectedCustomer
-      : Array.from(state.customers.values()).find((item) => item.status === "waiting");
+      : aguardando[0];
     const readyRepair = state.repairs.find((repair) => repair.status === "ready");
     let result: ActionResult;
 
@@ -162,13 +181,33 @@ export default function GameCanvas() {
         if (result.ok) handle.pickUpRepair(customer.id);
       } else if (!customer.needsProduct) {
         result = { ok: false, message: "Receba o aparelho deste cliente no balcão antes de levá-lo à assistência." };
-      } else if (handle.getCarriedProduct() !== customer.needsProduct) {
-        result = { ok: false, message: "Pegue o produto pedido nas prateleiras antes de fechar a venda." };
+      } else if (carriedProduct !== customer.needsProduct) {
+        // De mãos vazias, o E no balcão prioriza esse cliente e diz o que buscar.
+        world.selectCustomer(customer.id);
+        const nome = state.products.get(customer.needsProduct)?.name ?? "o produto";
+        result = carriedProduct
+          ? { ok: false, message: `Você está com outro item na mão. ${customer.name} quer ${nome}.` }
+          : { ok: false, message: `${customer.name} quer ${nome}: pegue nas prateleiras e volte.` };
       } else {
         const product = state.products.get(customer.needsProduct);
-        const price = product ? Math.min(product.sellingPrice, customer.budget) : 0;
-        result = world.sellToCustomer(customer.id, price);
-        if (result.ok) handle.putDownProduct();
+        const preco = product?.sellingPrice ?? 0;
+        if (product && customer.budget < preco) {
+          // Vender abaixo da vitrine é decisão do dono da loja, não do atendente.
+          setPedidoDesconto({
+            customerId: customer.id,
+            customerName: customer.name,
+            produto: product.name,
+            precoVitrine: preco,
+            precoCliente: customer.budget,
+          });
+          result = {
+            ok: false,
+            message: `${customer.name} não paga o preço de vitrine. Aprove ou recuse o desconto.`,
+          };
+        } else {
+          result = world.sellToCustomer(customer.id, preco);
+          if (result.ok) handle.putDownProduct();
+        }
       }
     } else if (station === "assistencia") {
       if (carriedRepairCustomerId) {
@@ -331,6 +370,24 @@ export default function GameCanvas() {
     [sincronizar]
   );
 
+  /** O jogador bateu o martelo: fecha a venda pelo valor que o cliente aceita. */
+  const aprovarDesconto = useCallback(() => {
+    if (!pedidoDesconto) return;
+    const resultado = vender(pedidoDesconto.customerId, pedidoDesconto.precoCliente);
+    mapActionRef.current = resultado;
+    setPedidoDesconto(null);
+    sincronizar();
+  }, [pedidoDesconto, vender, sincronizar]);
+
+  const recusarDesconto = useCallback(() => {
+    setPedidoDesconto(null);
+    mapActionRef.current = {
+      ok: true,
+      message: "Desconto recusado. O item continua na sua mão.",
+    };
+    sincronizar();
+  }, [sincronizar]);
+
   const aceitarReparo = useCallback(
     (id: string): ActionResult => {
       const world = worldRef.current;
@@ -436,6 +493,9 @@ export default function GameCanvas() {
           playerStation={instantaneo.playerStation}
           carriedProductName={instantaneo.carriedProductName}
           mapAction={instantaneo.mapAction}
+          pedidoDesconto={pedidoDesconto}
+          onAprovarDesconto={aprovarDesconto}
+          onRecusarDesconto={recusarDesconto}
           capacidades={capacidades}
           onStartShift={iniciarTurno}
           onSelectCustomer={selecionarCliente}

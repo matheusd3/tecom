@@ -26,6 +26,18 @@ export interface Capacidades {
   relatorio: boolean;
 }
 
+/**
+ * Cliente que não paga o preço de vitrine. O atendente não decide sozinho
+ * baixar preço: quem aprova o desconto é o dono da loja.
+ */
+export interface PedidoDesconto {
+  customerId: string;
+  customerName: string;
+  produto: string;
+  precoVitrine: number;
+  precoCliente: number;
+}
+
 interface GameUIProps {
   gameState: GameState | null;
   opportunities: Opportunity[];
@@ -37,6 +49,10 @@ interface GameUIProps {
   carriedProductName?: string;
   /** Resposta da última interação feita pela tecla E dentro da loja. */
   mapAction: ActionResult | null;
+  /** Desconto esperando aprovação do jogador, se houver. */
+  pedidoDesconto: PedidoDesconto | null;
+  onAprovarDesconto: () => void;
+  onRecusarDesconto: () => void;
   onStartShift: () => void;
   onSelectCustomer: (id: string) => void;
   onSell: (id: string, preco: number) => ActionResult;
@@ -527,7 +543,15 @@ export function GameUI(props: GameUIProps) {
           </section>
         )}
 
-        {emTurno &&
+        {/* Aprovar desconto é a decisão mais urgente na tela: vem antes do posto. */}
+        {emTurno && props.pedidoDesconto ? (
+          <AprovacaoDeDesconto
+            pedido={props.pedidoDesconto}
+            onAprovar={props.onAprovarDesconto}
+            onRecusar={props.onRecusarDesconto}
+          />
+        ) : (
+          emTurno &&
           (selecionado ? (
             <PostoAtendimento
               cliente={selecionado}
@@ -550,7 +574,8 @@ export function GameUI(props: GameUIProps) {
                 cliente entra a qualquer momento.
               </p>
             </section>
-          ))}
+          ))
+        )}
       </main>
 
       {/* ---------- Painel esquerdo: preparação ---------- */}
@@ -1001,6 +1026,65 @@ function PostoAtendimento({
   );
 }
 
+function AprovacaoDeDesconto({
+  pedido,
+  onAprovar,
+  onRecusar,
+}: {
+  pedido: PedidoDesconto;
+  onAprovar: () => void;
+  onRecusar: () => void;
+}) {
+  const desconto = pedido.precoVitrine - pedido.precoCliente;
+  const percentual =
+    pedido.precoVitrine > 0 ? (desconto / pedido.precoVitrine) * 100 : 0;
+
+  return (
+    <section className="palco__card aprovacao">
+      <header className="posto__topo">
+        <div>
+          <p className="palco__etiqueta">Precisa da sua aprovação</p>
+          <h2 className="palco__titulo">Desconto no {pedido.produto}</h2>
+        </div>
+        <span className="urgencia urgencia--high">-{Math.round(percentual)}%</span>
+      </header>
+
+      <p className="palco__texto">
+        {pedido.customerName} não paga o preço de vitrine. O atendente está com o
+        item na mão, esperando você decidir.
+      </p>
+
+      <div className="posto__pedido">
+        <div className="kpi">
+          <span className="kpi__rotulo">Preço de vitrine</span>
+          <strong className="kpi__valor">{formatarMoeda(pedido.precoVitrine)}</strong>
+        </div>
+        <div className="kpi">
+          <span className="kpi__rotulo">O cliente paga</span>
+          <strong className="kpi__valor valor--alerta">
+            {formatarMoeda(pedido.precoCliente)}
+          </strong>
+        </div>
+        <div className="kpi">
+          <span className="kpi__rotulo">Você abre mão de</span>
+          <strong className="kpi__valor valor--negativo">
+            {formatarMoeda(desconto)}
+          </strong>
+        </div>
+      </div>
+
+      <div className="posto__acoes">
+        <button className="btn btn--gigante btn--sucesso" onClick={onAprovar}>
+          Aprovar por {formatarMoeda(pedido.precoCliente)}
+        </button>
+        <button className="btn" onClick={onRecusar}>
+          Manter preço
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function CartaoFila({
   cliente,
   selecionado,
@@ -1153,6 +1237,16 @@ function ModalFechamento({
                 </strong>
               </div>
             </div>
+
+            {/* O núcleo publica o que aconteceu de marcante no turno — inclusive
+                o que ficou pendente na assistência. */}
+            {relatorio.highlights && relatorio.highlights.length > 0 && (
+              <ul className="fechamento__destaques">
+                {relatorio.highlights.map((destaque, i) => (
+                  <li key={i}>{destaque}</li>
+                ))}
+              </ul>
+            )}
 
             {relatorio.topOpportunity && (
               <article className="oportunidade oportunidade--high fechamento__dica">
