@@ -211,7 +211,9 @@ export class GameWorld {
       return { ok: false, message: "Esse reparo não está disponível." };
     }
     customer.status = "beingServed";
-    this.state.selectedCustomerId = customerId;
+    // Depois de receber o aparelho, ele deixa a fila. A próxima interação deve
+    // mirar um cliente que ainda aguarda, não o reparo que já está em trânsito.
+    this.state.selectedCustomerId = undefined;
     return { ok: true, message: "Aparelho recebido. Leve-o à bancada técnica." };
   }
 

@@ -122,16 +122,26 @@ export default function GameCanvas() {
     if (!world || !handle) return;
     const state = world.getState();
     const carriedRepairCustomerId = handle.getCarriedRepairCustomerId();
+    const selectedCustomer = state.selectedCustomerId
+      ? state.customers.get(state.selectedCustomerId)
+      : undefined;
     const customer = carriedRepairCustomerId
       ? state.customers.get(carriedRepairCustomerId)
-      : state.selectedCustomerId
-      ? state.customers.get(state.selectedCustomerId)
+      : selectedCustomer?.status === "waiting"
+      ? selectedCustomer
       : Array.from(state.customers.values()).find((item) => item.status === "waiting");
+    const readyRepair = state.repairs.find((repair) => repair.status === "ready");
     let result: ActionResult;
 
-    if (!customer) {
+    const station = handle.getPlayerStation();
+
+    // A bancada pode ter um reparo pronto mesmo sem alguém aguardando na fila.
+    if (station === "bancada" && !carriedRepairCustomerId && readyRepair) {
+      result = world.collectCompletedRepair(readyRepair.customerId);
+      if (result.ok) handle.pickUpRepair(readyRepair.customerId);
+    } else if (!customer) {
       result = { ok: false, message: "Não há ninguém esperando para atender." };
-    } else if (handle.getPlayerStation() === "prateleira") {
+    } else if (station === "prateleira") {
       if (!customer.needsProduct) {
         result = { ok: false, message: "Este cliente precisa ir para a bancada técnica, não para a prateleira." };
       } else if (handle.getCarriedProduct()) {
@@ -143,7 +153,7 @@ export default function GameCanvas() {
         handle.pickUpProduct(customer.needsProduct);
         result = { ok: true, message: `Você pegou ${state.products.get(customer.needsProduct)?.name ?? "o produto"}. Vá ao balcão.` };
       }
-    } else if (handle.getPlayerStation() === "balcao") {
+    } else if (station === "balcao") {
       if (carriedRepairCustomerId) {
         result = world.returnRepairToCustomer(carriedRepairCustomerId);
         if (result.ok) handle.putDownProduct();
@@ -160,20 +170,14 @@ export default function GameCanvas() {
         result = world.sellToCustomer(customer.id, price);
         if (result.ok) handle.putDownProduct();
       }
-    } else if (handle.getPlayerStation() === "bancada") {
+    } else if (station === "bancada") {
       if (carriedRepairCustomerId) {
         result = world.acceptRepair(carriedRepairCustomerId);
         if (result.ok) handle.putDownProduct();
-      } else {
-        const readyRepair = state.repairs.find((repair) => repair.status === "ready");
-        if (readyRepair) {
-          result = world.collectCompletedRepair(readyRepair.customerId);
-          if (result.ok) handle.pickUpRepair(readyRepair.customerId);
-        } else if (!customer.needsService) {
+      } else if (!customer.needsService) {
         result = { ok: false, message: "Este cliente quer comprar: pegue o item na prateleira." };
-        } else {
-          result = { ok: false, message: "Receba o aparelho no balcão e traga-o até esta bancada." };
-        }
+      } else {
+        result = { ok: false, message: "Receba o aparelho no balcão e traga-o até esta bancada." };
       }
     } else {
       result = { ok: false, message: "Aproxime-se do balcão, das prateleiras ou da bancada para usar E." };
