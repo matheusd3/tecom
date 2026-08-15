@@ -1617,3 +1617,118 @@ button {
     font-size: 9px;
   }
 }
+
+/* ---------- Celular: jogo em paisagem ---------- */
+
+.aviso-orientacao {
+  display: none;
+}
+
+@media (max-width: 820px) and (orientation: landscape) {
+  .painel {
+    display: none;
+  }
+
+  .palco {
+    left: 0;
+    right: 0;
+    top: var(--topo-total);
+    bottom: 0;
+    padding: 10px 14px;
+    justify-content: flex-end;
+  }
+
+  .palco__card {
+    width: min(340px, 42vw);
+    max-height: calc(100vh - var(--topo-total) - 18px);
+    padding: 12px;
+  }
+
+  .controles-jogo {
+    top: calc(var(--topo-total) + 8px);
+    left: 12px;
+  }
+
+  .controles-toque {
+    bottom: 10px;
+    left: 14px;
+    right: 14px;
+  }
+
+  .direcional {
+    width: 104px;
+    height: 104px;
+  }
+
+  .direcional__botao {
+    width: 35px;
+    height: 35px;
+    border-radius: 9px;
+    font-size: 13px;
+  }
+
+  .direcional__cima { left: 35px; }
+  .direcional__esquerda { top: 35px; }
+  .direcional__direita { top: 35px; }
+  .direcional__baixo { left: 35px; }
+
+  .botao-interagir {
+    min-height: 54px;
+  }
+
+  .cronometro {
+    min-width: 88px;
+  }
+
+  .cronometro__valor {
+    font-size: 19px;
+  }
+
+  .barra--turno {
+    width: 78px;
+  }
+}
+
+@media (max-width: 820px) and (orientation: portrait) {
+  .ui-root > :not(.aviso-orientacao) {
+    visibility: hidden;
+  }
+
+  .aviso-orientacao {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 32px;
+    color: var(--texto);
+    text-align: center;
+    background: rgba(10, 14, 19, 0.94);
+    pointer-events: auto;
+  }
+
+  .aviso-orientacao__icone {
+    display: grid;
+    width: 76px;
+    height: 76px;
+    place-items: center;
+    border: 1px solid var(--ciano);
+    border-radius: 18px;
+    color: var(--ciano);
+    font-size: 48px;
+    box-shadow: 0 0 24px rgba(0, 229, 255, 0.24);
+  }
+
+  .aviso-orientacao strong {
+    font-family: Orbitron, monospace;
+    color: var(--ciano);
+  }
+
+  .aviso-orientacao span:last-child {
+    color: var(--texto-fraco);
+    line-height: 1.5;
+  }
+}

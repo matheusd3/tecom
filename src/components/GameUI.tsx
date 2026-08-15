@@ -363,6 +363,11 @@ export function GameUI(props: GameUIProps) {
 
   return (
     <div className={`ui-root fase-${fase}`}>
+      <div className="aviso-orientacao" role="status">
+        <span className="aviso-orientacao__icone">↻</span>
+        <strong>Gire o celular</strong>
+        <span>Este jogo foi preparado para usar na horizontal.</span>
+      </div>
       {/* ---------- Barra superior ---------- */}
       <header className="topbar">
         <div className="marca">
