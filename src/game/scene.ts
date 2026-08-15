@@ -19,7 +19,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { GameWorld } from "./GameWorld";
-import type { ProductType } from "./types";
+import type { Employee, EmployeeRole, ProductType } from "./types";
 
 export type PlayerStation = "balcao" | "prateleira" | "bancada" | "loja";
 
@@ -84,6 +84,9 @@ export async function createGameScene(
 
   const world = new GameWorld();
   const repairPiles = criarPilhasDeReparo(scene, world);
+  // João é o avatar controlado pela pessoa jogando. Os demais contratados
+  // ganham corpos próprios e aparecem/desaparecem conforme a equipe muda.
+  const equipeVisivel = criarEquipeVisivel(scene, world);
   gameWorld = world;
 
   return {
@@ -92,6 +95,7 @@ export async function createGameScene(
     update(deltaSeconds: number) {
       world.update(deltaSeconds);
       player.update(deltaSeconds);
+      equipeVisivel.update(deltaSeconds);
       repairPiles.update();
     },
     getPlayerStation() {
@@ -114,6 +118,7 @@ export async function createGameScene(
     },
     dispose() {
       player.dispose();
+      equipeVisivel.dispose();
       scene.dispose();
       if (gameWorld === world) {
         gameWorld = null;
@@ -255,6 +260,86 @@ function criarEstacao(scene: Scene, name: string, position: Vector3, size: Vecto
   material.emissiveColor = color.scale(0.32);
   material.alpha = 0.8;
   station.material = material;
+}
+
+type FuncionarioVisual = { root: TransformNode; role: EmployeeRole; phase: number };
+
+/** Mostra no salão cada funcionário que não é o atendente controlado pelo jogador. */
+function criarEquipeVisivel(scene: Scene, world: GameWorld): { update(deltaSeconds: number): void; dispose(): void } {
+  const visuais = new Map<string, FuncionarioVisual>();
+  let elapsed = 0;
+
+  const criarVisual = (employee: Employee): FuncionarioVisual => {
+    const root = new TransformNode(`funcionario-${employee.id}`, scene);
+    const isTech = employee.role === "technician";
+    const corpo = CreateBox(`funcionario-corpo-${employee.id}`, { width: 1.45, height: 2.15, depth: 1.05 }, scene);
+    corpo.parent = root;
+    corpo.position.y = 1.08;
+    const cabeca = CreateSphere(`funcionario-cabeca-${employee.id}`, { diameter: 1.25, segments: 12 }, scene);
+    cabeca.parent = root;
+    cabeca.position.y = 2.72;
+    const uniforme = new StandardMaterial(`mat-funcionario-${employee.id}`, scene);
+    uniforme.disableLighting = true;
+    uniforme.emissiveColor = isTech ? MAGENTA : AMARELO;
+    corpo.material = uniforme;
+    const rosto = new StandardMaterial(`mat-rosto-funcionario-${employee.id}`, scene);
+    rosto.disableLighting = true;
+    rosto.emissiveColor = isTech ? CREME : CIANO;
+    cabeca.material = rosto;
+
+    const marca = CreateBox(`funcionario-marca-${employee.id}`, { width: 2.75, height: 0.06, depth: 2.75 }, scene);
+    marca.parent = root;
+    marca.position.y = 0.04;
+    const matMarca = new StandardMaterial(`mat-marca-funcionario-${employee.id}`, scene);
+    matMarca.disableLighting = true;
+    matMarca.emissiveColor = isTech ? MAGENTA.scale(0.7) : AMARELO.scale(0.72);
+    matMarca.alpha = 0.7;
+    marca.material = matMarca;
+    return { root, role: employee.role, phase: Math.random() * Math.PI * 2 };
+  };
+
+  const posicionar = (employee: Employee, visual: FuncionarioVisual, sellerIndex: number) => {
+    // Técnico fica junto da bancada. Atendentes auxiliares ocupam vagas atrás
+    // do balcão, sem se confundir com o personagem controlado pelo jogador.
+    if (employee.role === "technician") {
+      visual.root.position.x = employee.isBusy ? 29.5 : 31.5;
+      visual.root.position.z = employee.isBusy ? 7.5 : 12.5;
+      visual.root.rotation.y = Math.PI;
+    } else {
+      visual.root.position.x = -6 + sellerIndex * 5;
+      visual.root.position.z = -12.7;
+      visual.root.rotation.y = Math.PI;
+    }
+  };
+
+  return {
+    update(deltaSeconds) {
+      elapsed += deltaSeconds;
+      const employees = Array.from(world.getState().employees.values()).filter((employee) => employee.id !== "seller-1");
+      const activeIds = new Set(employees.map((employee) => employee.id));
+      for (const [id, visual] of visuais) {
+        if (!activeIds.has(id)) {
+          visual.root.dispose(false, true);
+          visuais.delete(id);
+        }
+      }
+
+      let sellerIndex = 0;
+      for (const employee of employees) {
+        let visual = visuais.get(employee.id);
+        if (!visual) {
+          visual = criarVisual(employee);
+          visuais.set(employee.id, visual);
+        }
+        posicionar(employee, visual, employee.role === "seller" ? sellerIndex++ : 0);
+        visual.root.position.y = Math.sin(elapsed * (employee.isBusy ? 5 : 2.2) + visual.phase) * 0.06;
+      }
+    },
+    dispose() {
+      for (const visual of visuais.values()) visual.root.dispose(false, true);
+      visuais.clear();
+    },
+  };
 }
 
 function criarAtendente(scene: Scene): {
