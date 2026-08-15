@@ -71,29 +71,21 @@ export const COLISORES: Retangulo[] = [
 // ---------------------------------------------------------------- zonas
 
 /**
- * Onde o atendente precisa estar para usar cada estação. Todas ficam em
- * corredores livres, do lado do móvel que a colisão deixa alcançável.
+ * A estação é medida pela distância ao MÓVEL, não por um retângulo desenhado à
+ * mão no chão. Retângulo fixo tem um defeito cruel: encostar no móvel é
+ * justamente o gesto natural do jogador, e é ali que a borda da zona acabava —
+ * o atendente ficava colado na bancada sem conseguir largar o aparelho.
  */
-export const ZONAS: Array<{ id: Estacao; retangulos: Retangulo[]; rotulo: string }> = [
-  {
-    id: "balcao",
-    rotulo: "Balcão de vendas",
-    retangulos: [{ minX: -8, maxX: 1.5, minZ: -3, maxZ: -0.8 }],
-  },
+export const ALCANCE_ESTACAO = 1.7;
+
+const ESTACOES: Array<{ id: Estacao; rotulo: string; moveis: Retangulo[] }> = [
+  { id: "balcao", rotulo: "Balcão de vendas", moveis: [MOVEIS.balcao] },
   {
     id: "estoque",
     rotulo: "Estoque",
-    retangulos: [
-      { minX: -8, maxX: 0, minZ: 0.2, maxZ: 1.3 },
-      { minX: -9.5, maxX: -8.2, minZ: -2, maxZ: 8 },
-      { minX: -9.5, maxX: 2, minZ: 8.3, maxZ: 9.5 },
-    ],
+    moveis: [MOVEIS.ilhaEstoque, MOVEIS.prateleiraEsquerda, MOVEIS.prateleiraFundo],
   },
-  {
-    id: "assistencia",
-    rotulo: "Assistência técnica",
-    retangulos: [{ minX: 4.5, maxX: 11, minZ: 7.4, maxZ: 8.7 }],
-  },
+  { id: "assistencia", rotulo: "Assistência técnica", moveis: [MOVEIS.bancada] },
 ];
 
 // ---------------------------------------------------------------- pessoas
@@ -142,6 +134,13 @@ export function dentro(p: Ponto, r: Retangulo): boolean {
   return p.x >= r.minX && p.x <= r.maxX && p.z >= r.minZ && p.z <= r.maxZ;
 }
 
+/** Distância do ponto até a borda do retângulo (0 se estiver dentro). */
+export function distanciaAte(p: Ponto, r: Retangulo): number {
+  const dx = Math.max(r.minX - p.x, 0, p.x - r.maxX);
+  const dz = Math.max(r.minZ - p.z, 0, p.z - r.maxZ);
+  return Math.hypot(dx, dz);
+}
+
 /**
  * Tira o personagem de dentro dos móveis empurrando-o pela saída mais curta.
  * Andar e depois resolver (em vez de cancelar o passo) é o que faz o boneco
@@ -184,13 +183,24 @@ export function resolverColisoes(p: Ponto, raio: number): void {
   }
 }
 
+/** A estação mais perto do atendente, se ele estiver ao alcance de alguma. */
 export function estacaoEm(p: Ponto): Estacao | null {
-  for (const zona of ZONAS) {
-    if (zona.retangulos.some((r) => dentro(p, r))) return zona.id;
+  let escolhida: Estacao | null = null;
+  let menorDistancia = ALCANCE_ESTACAO;
+
+  for (const estacao of ESTACOES) {
+    for (const movel of estacao.moveis) {
+      const distancia = distanciaAte(p, movel);
+      if (distancia <= menorDistancia) {
+        menorDistancia = distancia;
+        escolhida = estacao.id;
+      }
+    }
   }
-  return null;
+
+  return escolhida;
 }
 
 export function rotuloDaEstacao(estacao: Estacao): string {
-  return ZONAS.find((z) => z.id === estacao)?.rotulo ?? estacao;
+  return ESTACOES.find((e) => e.id === estacao)?.rotulo ?? estacao;
 }
