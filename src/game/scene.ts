@@ -18,6 +18,9 @@ import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { GlowLayer } from "@babylonjs/core/Layers/glowLayer";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { CreatePlane } from "@babylonjs/core/Meshes/Builders/planeBuilder";
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 
 import { GameWorld } from "./GameWorld";
 import type { ProductType } from "./types";
@@ -122,6 +125,18 @@ export async function createGameScene(
   brilho.intensity = 0.35;
 
   const loja = construirLoja(scene);
+  const popups: Array<{ mesh: ReturnType<typeof CreatePlane>; material: StandardMaterial; idade: number }> = [];
+  const mostrarDinheiro = (texto: string) => {
+    const id = `dinheiro-${Date.now()}-${popups.length}`;
+    const textura = new DynamicTexture(id, { width: 512, height: 128 }, scene, true);
+    const ctx = textura.getContext();
+    ctx.fillStyle = "#b6ff3a"; ctx.font = "bold 58px sans-serif"; ctx.fillText(texto, 95, 78); textura.update();
+    const material = new StandardMaterial(`mat-${id}`, scene);
+    material.diffuseTexture = textura; material.opacityTexture = textura; material.useAlphaFromDiffuseTexture = true; material.emissiveColor = new Color3(0.75, 1, 0.3); material.backFaceCulling = false;
+    const mesh = CreatePlane(id, { width: 3.5, height: 0.85 }, scene);
+    mesh.position.set(-3.5, 2.6, -2.7); mesh.material = material;
+    popups.push({ mesh, material, idade: 0 });
+  };
   const pessoas = criarFabricaDePessoas(scene);
   const multidao = criarMultidao(pessoas);
 
@@ -137,6 +152,8 @@ export async function createGameScene(
   let produtoCarregado: ProductType | undefined;
   let reparoCarregado: string | undefined;
   let caixaCarregada: ProductType | undefined;
+  let vendasVistas = 0;
+  let reparosVistos = 0;
   const maoOcupada = () => !!produtoCarregado || !!reparoCarregado || !!caixaCarregada;
 
   loja.destacarZona(jogador.estacao);
@@ -149,6 +166,20 @@ export async function createGameScene(
       world.update(deltaSeconds);
       jogador.atualizar(deltaSeconds);
       const estado = world.getState();
+      if (estado.sales.length > vendasVistas) {
+        const venda = estado.sales[estado.sales.length - 1];
+        mostrarDinheiro(`+R$ ${venda.price.toFixed(0)}`);
+        vendasVistas = estado.sales.length;
+      }
+      const concluidos = estado.repairs.filter((reparo) => reparo.status === "completed");
+      if (concluidos.length > reparosVistos) {
+        mostrarDinheiro(`+R$ ${concluidos[concluidos.length - 1].price.toFixed(0)}`);
+        reparosVistos = concluidos.length;
+      }
+      for (let i = popups.length - 1; i >= 0; i--) {
+        const popup = popups[i]; popup.idade += deltaSeconds; popup.mesh.position.y += deltaSeconds * 1.5; popup.material.alpha = Math.max(0, 1 - popup.idade);
+        if (popup.idade > 1) { popup.mesh.dispose(); popup.material.dispose(); popups.splice(i, 1); }
+      }
       multidao.sincronizar(estado);
       multidao.atualizar(deltaSeconds);
       equipe.atualizar(deltaSeconds);

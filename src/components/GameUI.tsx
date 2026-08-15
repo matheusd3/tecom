@@ -17,6 +17,7 @@ import type {
   Product,
   ProductType,
   ShiftReport,
+  Upgrade,
 } from "@/game/types";
 
 /** O que o núcleo já expõe. Enquanto o Codex termina, a interface se adapta. */
@@ -43,6 +44,7 @@ export interface PedidoDesconto {
 interface GameUIProps {
   gameState: GameState | null;
   opportunities: Opportunity[];
+  upgradesOferecidos: Upgrade[];
   shiftReport: ShiftReport | null;
   capacidades: Capacidades;
   /** Onde o atendente está parado na loja 3D. */
@@ -69,6 +71,8 @@ interface GameUIProps {
   onBuyStock: (tipo: ProductType, quantidade: number) => boolean;
   onSetPrice: (tipo: ProductType, preco: number) => boolean;
   onHire: (funcao: EmployeeRole, nome: string) => boolean;
+  onUpgrade: (id: Upgrade["id"]) => ActionResult;
+  onOpportunityAction: (opportunity: Opportunity) => ActionResult;
   onClearOpportunities: () => void;
   onReset: () => void;
   onMobileMove: (x: number, z: number) => void;
@@ -899,7 +903,11 @@ export function GameUI(props: GameUIProps) {
                   Limpar oportunidades
                 </button>
                 {opportunities.map((o) => (
-                  <OportunidadeCard key={o.id} oportunidade={o} />
+                  <OportunidadeCard key={o.id} oportunidade={o} onAcao={(opportunity) => {
+                    const resultado = props.onOpportunityAction(opportunity);
+                    setAviso({ texto: resultado.message, tipo: resultado.ok ? "ok" : "erro" });
+                    return resultado;
+                  }} />
                 ))}
               </>
             )}
@@ -955,6 +963,10 @@ export function GameUI(props: GameUIProps) {
           relatorio={shiftReport}
           temRelatorio={capacidades.relatorio}
           podeContinuar={capacidades.iniciarTurno}
+          caixa={gameState.cash}
+          melhorias={props.upgradesOferecidos}
+          upgrades={gameState.upgrades}
+          onComprar={props.onUpgrade}
           proximoDia={dia}
           onContinuar={props.onStartShift}
           onPreparar={() => setResumoFechado(true)}
@@ -1209,7 +1221,7 @@ function CartaoFila({
   );
 }
 
-function OportunidadeCard({ oportunidade }: { oportunidade: Opportunity }) {
+function OportunidadeCard({ oportunidade, onAcao }: { oportunidade: Opportunity; onAcao: (opportunity: Opportunity) => ActionResult }) {
   const gravidade =
     oportunidade.severity === "high"
       ? "Urgente"
@@ -1235,6 +1247,7 @@ function OportunidadeCard({ oportunidade }: { oportunidade: Opportunity }) {
         </span>
       </div>
       <p className="oportunidade__acao">→ {oportunidade.recommendation}</p>
+      {oportunidade.acao && <button className="btn" onClick={() => onAcao(oportunidade)}>{oportunidade.acao.rotulo}</button>}
     </article>
   );
 }
@@ -1244,6 +1257,10 @@ function ModalFechamento({
   temRelatorio,
   podeContinuar,
   proximoDia,
+  caixa,
+  melhorias,
+  upgrades,
+  onComprar,
   onContinuar,
   onPreparar,
 }: {
@@ -1251,6 +1268,10 @@ function ModalFechamento({
   temRelatorio: boolean;
   podeContinuar: boolean;
   proximoDia: number;
+  caixa: number;
+  melhorias: Upgrade[];
+  upgrades: Upgrade["id"][];
+  onComprar: (id: Upgrade["id"]) => ActionResult;
   onContinuar: () => void;
   onPreparar: () => void;
 }) {
@@ -1343,6 +1364,21 @@ function ModalFechamento({
                 </p>
               </article>
             )}
+            {melhorias.length > 0 ? (
+              <div className="fechamento__melhorias">
+                <p className="palco__etiqueta">Escolha uma melhoria permanente</p>
+                <div className="fechamento__kpis">
+                  {melhorias.map((melhoria) => (
+                    <article className="kpi" key={melhoria.id}>
+                      <strong className="kpi__valor">{melhoria.nome}</strong>
+                      <span className="kpi__rotulo">{melhoria.descricao}</span>
+                      <span className="kpi__rotulo">{formatarMoeda(melhoria.custo)}</span>
+                      <button className="btn" disabled={caixa < melhoria.custo} title={caixa < melhoria.custo ? "Caixa insuficiente" : undefined} onClick={() => onComprar(melhoria.id)}>Comprar</button>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ) : upgrades.length > 0 ? <p className="palco__texto">Melhoria do dia: instalada.</p> : null}
           </>
         ) : (
           <p className="palco__texto">

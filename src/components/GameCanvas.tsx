@@ -19,6 +19,7 @@ import type {
   ProductType,
   EmployeeRole,
   ShiftReport,
+  Upgrade,
 } from "@/game/types";
 import { GameUI, type Capacidades, type PedidoDesconto } from "./GameUI";
 import { Soundtrack } from "@/audio/Soundtrack";
@@ -26,6 +27,7 @@ import { Soundtrack } from "@/audio/Soundtrack";
 interface Instantaneo {
   gameState: GameState | null;
   opportunities: Opportunity[];
+  upgradesOferecidos: Upgrade[];
   shiftReport: ShiftReport | null;
   playerStation: PlayerStation;
   carriedProductName?: string;
@@ -87,6 +89,7 @@ export default function GameCanvas() {
   const [instantaneo, setInstantaneo] = useState<Instantaneo>({
     gameState: null,
     opportunities: [],
+    upgradesOferecidos: [],
     shiftReport: null,
     playerStation: "loja",
     mapAction: null,
@@ -109,6 +112,7 @@ export default function GameCanvas() {
     setInstantaneo({
       gameState: world.getState(),
       opportunities: [...world.getOpportunities()],
+      upgradesOferecidos: world.getUpgradesOferecidos(),
       shiftReport: lerRelatorio(world),
       playerStation: handleRef.current?.getPlayerStation() ?? "loja",
       carriedProductName: (() => {
@@ -572,6 +576,28 @@ export default function GameCanvas() {
     sincronizar();
   }, [sincronizar]);
 
+  const comprarUpgrade = useCallback((id: Upgrade["id"]): ActionResult => {
+    const resultado = worldRef.current?.comprarUpgrade(id) ?? FALHA_SEM_NUCLEO;
+    mapActionRef.current = resultado;
+    sincronizar();
+    return resultado;
+  }, [sincronizar]);
+
+  const executarOportunidade = useCallback((o: Opportunity): ActionResult => {
+    const acao = o.acao;
+    const world = worldRef.current;
+    if (!world || !acao) return { ok: false, message: "Essa recomendação não tem ação disponível." };
+    let ok = false;
+    if (acao.tipo === "reporPrateleira" && acao.produto) return world.restockShelf(acao.produto, acao.quantidade);
+    if (acao.tipo === "comprarEstoque" && acao.produto) ok = world.buyStock(acao.produto, acao.quantidade ?? 5);
+    if (acao.tipo === "ajustarPreco" && acao.produto) ok = world.setProductPrice(acao.produto, acao.preco ?? 0);
+    if (acao.tipo === "contratar" && acao.funcao) ok = world.hireEmployee(acao.funcao, `Consultor ${acao.funcao}`);
+    const resultado = { ok, message: ok ? "Recomendação aplicada." : "Não foi possível aplicar esta recomendação agora." };
+    mapActionRef.current = resultado;
+    sincronizar();
+    return resultado;
+  }, [sincronizar]);
+
   const reiniciar = useCallback(() => {
     worldRef.current?.reset();
     sincronizar();
@@ -592,6 +618,7 @@ export default function GameCanvas() {
         <GameUI
           gameState={instantaneo.gameState}
           opportunities={instantaneo.opportunities}
+          upgradesOferecidos={instantaneo.upgradesOferecidos}
           shiftReport={instantaneo.shiftReport}
           playerStation={instantaneo.playerStation}
           carriedProductName={instantaneo.carriedProductName}
@@ -614,6 +641,8 @@ export default function GameCanvas() {
           onBuyStock={comprarEstoque}
           onSetPrice={definirPreco}
           onHire={contratar}
+          onUpgrade={comprarUpgrade}
+          onOpportunityAction={executarOportunidade}
           onClearOpportunities={limparOportunidades}
           onReset={reiniciar}
           onMobileMove={moverNoCelular}

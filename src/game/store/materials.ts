@@ -252,7 +252,7 @@ export function materialCartaz(
 export function materialIcone(
   scene: Scene,
   nome: string,
-  tipo: "produto" | "reparo",
+  tipo: "produto" | "reparo" | "feliz" | "bravo",
   hexFundo: string
 ): StandardMaterial {
   const lado = 256;
@@ -287,7 +287,7 @@ export function materialIcone(
     ctx.moveTo(52, 172);
     ctx.lineTo(204, 172);
     ctx.stroke();
-  } else {
+  } else if (tipo === "reparo") {
     // Chave inglesa na diagonal.
     ctx.beginPath();
     ctx.moveTo(96, 168);
@@ -300,6 +300,11 @@ export function materialIcone(
     ctx.beginPath();
     ctx.arc(180, 84, 26, Math.PI * 1.15, Math.PI * 0.55);
     ctx.stroke();
+  } else {
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 130px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(tipo === "feliz" ? "♥" : "☁", lado / 2, 170);
   }
   textura.update();
   textura.hasAlpha = true;

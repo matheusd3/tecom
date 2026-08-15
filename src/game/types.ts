@@ -7,6 +7,15 @@ export type CustomerStatus = "waiting" | "beingServed" | "repairing" | "leaving"
 export type GamePhase = "planning" | "active" | "summary";
 export type ShiftEventType = "influencer" | "couponLeak" | "powerSurge";
 export type RepairStatus = "queued" | "inProgress" | "ready" | "returning" | "completed";
+export type UpgradeId = "segundoBalcao" | "bancadaRapida" | "carrinho" | "prateleiraGrande" | "letreiroRua" | "cafeDaEspera";
+
+export interface Upgrade {
+  id: UpgradeId;
+  nome: string;
+  descricao: string;
+  custo: number;
+  requer: UpgradeId[];
+}
 
 export interface Product {
   id: string;
@@ -149,6 +158,8 @@ export interface GameState {
   idleEmployeeTime: number;
   customerSatisfactionAvg: number;
   employeeHappinessAvg: number;
+  upgrades: UpgradeId[];
+  upgradesOferecidos: UpgradeId[];
 }
 
 export interface Opportunity {
@@ -160,6 +171,7 @@ export interface Opportunity {
   severity: "low" | "medium" | "high";
   recommendation: string;
   timestamp: number;
+  acao?: { rotulo: string; tipo: "reporPrateleira" | "comprarEstoque" | "ajustarPreco" | "contratar"; produto?: ProductType; quantidade?: number; preco?: number; funcao?: EmployeeRole };
 }
 
 export interface ActionResult {

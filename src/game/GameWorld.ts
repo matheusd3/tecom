@@ -12,12 +12,23 @@ import {
   ServiceType,
   ShiftEvent,
   ShiftReport,
+  Upgrade,
+  UpgradeId,
 } from "./types";
 
 const MONTH_SECONDS = 14_400; // 30 dias de jogo, com 1 dia = 8 minutos
 const CUSTOMER_PATIENCE_PER_SECOND = 0.38;
 const CUSTOMER_SPAWN_MIN_SECONDS = 7;
 const CUSTOMER_SPAWN_MAX_SECONDS = 15;
+const CAPACIDADE_PRATELEIRA = 10;
+const CATALOGO_MELHORIAS: Upgrade[] = [
+  { id: "segundoBalcao", nome: "Segundo balcão", descricao: "A fila comporta até 5 clientes.", custo: 3500, requer: [] },
+  { id: "bancadaRapida", nome: "Bancada com testes", descricao: "Reparos levam 25% menos tempo.", custo: 3000, requer: [] },
+  { id: "carrinho", nome: "Carrinho de carga", descricao: "Cada viagem repõe até 10 unidades.", custo: 1800, requer: [] },
+  { id: "prateleiraGrande", nome: "Prateleira dupla", descricao: "A exposição por produto passa a 20 unidades.", custo: 2200, requer: [] },
+  { id: "letreiroRua", nome: "Letreiro para a rua", descricao: "Clientes chegam mais rápido.", custo: 2500, requer: [] },
+  { id: "cafeDaEspera", nome: "Café na espera", descricao: "Clientes perdem paciência 25% mais devagar.", custo: 1500, requer: [] },
+];
 const SHIFT_DURATION = 120;
 /**
  * Tempo que o cliente leva da porta até o balcão. Ninguém pode ser atendido
@@ -106,6 +117,25 @@ export class GameWorld {
 
   public getOpportunities(): Opportunity[] {
     return [...this.opportunities];
+  }
+
+  public getUpgradesOferecidos(): Upgrade[] {
+    return this.state.upgradesOferecidos.map((id) => CATALOGO_MELHORIAS.find((item) => item.id === id)!).filter(Boolean);
+  }
+
+  public temUpgrade(id: UpgradeId): boolean { return this.state.upgrades.includes(id); }
+
+  public comprarUpgrade(id: UpgradeId): ActionResult {
+    const upgrade = CATALOGO_MELHORIAS.find((item) => item.id === id);
+    if (!upgrade || !this.state.upgradesOferecidos.includes(id)) return { ok: false, message: "Essa melhoria não está na oferta de hoje." };
+    if (this.state.phase !== "summary") return { ok: false, message: "Melhorias só podem ser compradas no fechamento." };
+    if (this.state.upgrades.length && this.state.upgradesOferecidos.length === 0) return { ok: false, message: "Você já comprou a melhoria deste dia." };
+    if (upgrade.requer.some((requisito) => !this.temUpgrade(requisito))) return { ok: false, message: "Faltam melhorias anteriores para esta compra." };
+    if (this.state.cash < upgrade.custo) return { ok: false, message: "Caixa insuficiente para esta melhoria." };
+    this.recordExpense(upgrade.custo);
+    this.state.upgrades.push(id);
+    this.state.upgradesOferecidos = [];
+    return { ok: true, message: `${upgrade.nome} instalada: efeito permanente a partir do próximo turno.` };
   }
 
   public clearOpportunities(): void {
@@ -204,7 +234,7 @@ export class GameWorld {
   }
 
   /** Quantas unidades cabem numa viagem do almoxarifado até a prateleira. */
-  public static readonly CAIXA_DE_REPOSICAO = 5;
+  public get caixaDeReposicao(): number { return this.temUpgrade("carrinho") ? 10 : 5; }
 
   /** O que falta na prateleira e existe no almoxarifado — o que vale buscar. */
   public produtoParaRepor(): ProductType | undefined {
@@ -224,13 +254,15 @@ export class GameWorld {
   }
 
   /** Move uma caixa do almoxarifado para a prateleira. */
-  public restockShelf(productType: ProductType, quantity = GameWorld.CAIXA_DE_REPOSICAO): ActionResult {
+  public restockShelf(productType: ProductType, quantity = this.caixaDeReposicao): ActionResult {
     const product = this.state.products.get(productType);
     if (!product) return { ok: false, message: "Produto desconhecido." };
     if (product.storage <= 0) {
       return { ok: false, message: `Não há ${product.name} no almoxarifado. Compre no painel de estoque.` };
     }
-    const movidas = Math.min(product.storage, Math.max(1, Math.floor(quantity)));
+    const espaco = (this.temUpgrade("prateleiraGrande") ? CAPACIDADE_PRATELEIRA * 2 : CAPACIDADE_PRATELEIRA) - product.stock;
+    if (espaco <= 0) return { ok: false, message: `${product.name} já ocupa toda a prateleira.` };
+    const movidas = Math.min(product.storage, Math.max(1, Math.floor(quantity)), espaco);
     product.storage -= movidas;
     product.stock += movidas;
     return {
@@ -331,7 +363,7 @@ export class GameWorld {
     const price = 180 + skill * 1.5;
     const cost = price * 0.2;
     const surgeDelay = this.state.activeEvent?.type === "powerSurge" && this.consumeEventUse("powerSurge") ? 18 : 0;
-    const duration = Math.max(18, 58 - skill * 0.3) + surgeDelay;
+    const duration = this.duracaoReparo(Math.max(18, 58 - skill * 0.3) + surgeDelay);
     const repair: RepairOrder = {
       id: `repair-${Math.floor(this.state.time * 1000)}`, customerId: customer.id,
       serviceType: customer.needsService, technicianId: technician?.id, startTime: this.state.time,
@@ -356,7 +388,7 @@ export class GameWorld {
     if (naFila) {
       // Sem técnico livre quem trabalha é o jogador — e rende menos que um
       // profissional, senão contratar técnico não faria diferença.
-      const duracao = Math.max(24, 58 - 35 * 0.3);
+      const duracao = this.duracaoReparo(Math.max(24, 58 - 35 * 0.3));
       naFila.startTime = this.state.time;
       naFila.endTime = this.state.time + duracao;
       naFila.status = "inProgress";
@@ -483,15 +515,16 @@ export class GameWorld {
       products, employees, customers: new Map(), sales: [], repairs: [],
       missedSales: 0, missedRepairs: 0, idleEmployeeTime: 0,
       customerSatisfactionAvg: 80, employeeHappinessAvg: 79,
+      upgrades: [], upgradesOferecidos: [],
     };
   }
 
   private generateCustomers(elapsed: number): void {
-    if (Array.from(this.state.customers.values()).filter((customer) => customer.status === "waiting").length >= 3) return;
+    if (Array.from(this.state.customers.values()).filter((customer) => customer.status === "waiting").length >= (this.temUpgrade("segundoBalcao") ? 5 : 3)) return;
     this.customerSpawnTimer += elapsed;
     if (this.customerSpawnTimer < this.nextCustomerSpawn) return;
     this.customerSpawnTimer = 0;
-    this.nextCustomerSpawn = this.randomBetween(CUSTOMER_SPAWN_MIN_SECONDS, CUSTOMER_SPAWN_MAX_SECONDS);
+    this.nextCustomerSpawn = this.proximoSpawnCliente();
     const productTypes: ProductType[] = ["notebook", "mouse", "keyboard", "monitor", "headset", "webcam", "ssd", "ram"];
     const wantsProduct = Math.random() < 0.7;
     const type = productTypes[Math.floor(Math.random() * productTypes.length)];
@@ -525,7 +558,7 @@ export class GameWorld {
     for (const customer of this.state.customers.values()) {
       if (customer.status !== "waiting") continue;
       const urgencyMultiplier = customer.urgency === "high" ? 1.65 : customer.urgency === "medium" ? 1.2 : 1;
-      customer.patience = Math.max(0, customer.patience - elapsed * CUSTOMER_PATIENCE_PER_SECOND * urgencyMultiplier);
+      customer.patience = Math.max(0, customer.patience - elapsed * CUSTOMER_PATIENCE_PER_SECOND * urgencyMultiplier * (this.temUpgrade("cafeDaEspera") ? 0.75 : 1));
       if (customer.patience > 0) continue;
       this.loseCustomer(customer, "cansou de esperar");
     }
@@ -545,7 +578,7 @@ export class GameWorld {
     for (const repair of this.state.repairs.filter((item) => item.status === "queued")) {
       const technician = this.availableEmployee("technician");
       if (!technician) break;
-      const duration = Math.max(18, 58 - technician.skill * 0.3);
+      const duration = this.duracaoReparo(Math.max(18, 58 - technician.skill * 0.3));
       this.startRepair(repair, technician, duration);
     }
   }
@@ -758,6 +791,7 @@ export class GameWorld {
     this.state.isPaused = true;
     this.state.day++;
     this.state.dailyGoal = 900 + (this.state.day - 1) * 180;
+    this.state.upgradesOferecidos = this.sortearOfertas();
   }
 
   private processPayroll(): void {
@@ -789,13 +823,16 @@ export class GameWorld {
           "high",
           temNoAlmoxarifado
             ? `Vá ao almoxarifado, pegue uma caixa de ${product.name} e reponha a prateleira.`
-            : `Compre ${product.name} no painel: a mercadoria chega no almoxarifado.`
+            : `Compre ${product.name} no painel: a mercadoria chega no almoxarifado.`,
+          temNoAlmoxarifado
+            ? { rotulo: "Repor prateleira", tipo: "reporPrateleira", produto: product.type, quantidade: this.caixaDeReposicao }
+            : { rotulo: "Comprar estoque", tipo: "comprarEstoque", produto: product.type, quantidade: 5 }
         );
       }
       if (product.stock >= 10 && product.unitsSold === 0 && this.state.time - product.lastRestockedAt > 300) {
         this.addOpportunity(`pricing-${product.type}`, "pricing", `${product.name} está parado no estoque`,
           "Há muitas unidades sem nenhuma venda recente.", product.sellingPrice - product.costPrice,
-          "medium", "Teste uma redução de preço ou destaque este item em uma promoção.");
+          "medium", "Teste uma redução de preço ou destaque este item em uma promoção.", { rotulo: "Ajustar preço", tipo: "ajustarPreco", produto: product.type, preco: Math.max(product.costPrice, Math.round(product.sellingPrice * 0.9)) });
       }
     }
     if (this.state.missedSales >= 3) {
@@ -807,21 +844,21 @@ export class GameWorld {
     if (waitingRepairs >= 2) {
       this.addOpportunity("repair-queue", "service", "Fila na assistência técnica",
         `${waitingRepairs} clientes aguardam atendimento técnico.`, waitingRepairs * 220,
-        "high", "Contrate um técnico ou aumente a habilidade da equipe atual.");
+        "high", "Contrate um técnico ou aumente a habilidade da equipe atual.", { rotulo: "Contratar técnico", tipo: "contratar", funcao: "technician" });
     }
     const waitingSales = Array.from(this.state.customers.values()).filter((customer) => customer.status === "waiting" && customer.needsProduct).length;
     if (waitingSales >= 3) {
       this.addOpportunity("sales-queue", "hiring", "Fila de clientes no balcão",
         `${waitingSales} clientes aguardam um vendedor.`, waitingSales * 90,
-        "medium", "Contrate outro vendedor para reduzir a espera e evitar desistências.");
+        "medium", "Contrate outro vendedor para reduzir a espera e evitar desistências.", { rotulo: "Contratar vendedor", tipo: "contratar", funcao: "seller" });
     }
   }
 
-  private addOpportunity(key: string, type: Opportunity["type"], title: string, description: string, potentialProfit: number, severity: Opportunity["severity"], recommendation: string): void {
+  private addOpportunity(key: string, type: Opportunity["type"], title: string, description: string, potentialProfit: number, severity: Opportunity["severity"], recommendation: string, acao?: Opportunity["acao"]): void {
     const lastShown = this.lastOpportunityAt.get(key) ?? -Infinity;
     if (this.state.time - lastShown < 90) return;
     this.lastOpportunityAt.set(key, this.state.time);
-    this.opportunities.unshift({ id: `opp-${key}-${Math.floor(this.state.time)}`, type, title, description, potentialProfit: Math.round(potentialProfit), severity, recommendation, timestamp: this.state.time });
+    this.opportunities.unshift({ id: `opp-${key}-${Math.floor(this.state.time)}`, type, title, description, potentialProfit: Math.round(potentialProfit), severity, recommendation, timestamp: this.state.time, acao });
     this.opportunities = this.opportunities.slice(0, 10);
   }
 
@@ -858,6 +895,14 @@ export class GameWorld {
 
   private randomBetween(min: number, max: number): number {
     return min + Math.random() * (max - min);
+  }
+
+  private duracaoReparo(base: number): number { return base * (this.temUpgrade("bancadaRapida") ? 0.75 : 1); }
+  private proximoSpawnCliente(): number { return this.temUpgrade("letreiroRua") ? this.randomBetween(5, 11) : this.randomBetween(CUSTOMER_SPAWN_MIN_SECONDS, CUSTOMER_SPAWN_MAX_SECONDS); }
+  private sortearOfertas(): UpgradeId[] {
+    const disponiveis = CATALOGO_MELHORIAS.filter((item) => !this.temUpgrade(item.id) && item.requer.every((requisito) => this.temUpgrade(requisito)));
+    for (let i = disponiveis.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [disponiveis[i], disponiveis[j]] = [disponiveis[j], disponiveis[i]]; }
+    return disponiveis.slice(0, 3).map((item) => item.id);
   }
 
   private productStory(type: ProductType): string {

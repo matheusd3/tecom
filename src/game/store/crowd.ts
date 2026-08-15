@@ -24,6 +24,7 @@ interface ClienteVisual {
   alvo: Ponto;
   /** Sai de cena depois de andar até a porta. */
   saindo: boolean;
+  reacao: "feliz" | "bravo" | null;
 }
 
 export interface Multidao {
@@ -59,7 +60,7 @@ export function criarMultidao(fabrica: FabricaDePessoas): Multidao {
     });
     const posicao: Ponto = { ...ENTRADA };
     personagem.raiz.position.set(posicao.x, 0, posicao.z);
-    return { personagem, posicao, alvo: { ...ENTRADA }, saindo: false };
+    return { personagem, posicao, alvo: { ...ENTRADA }, saindo: false, reacao: null };
   };
 
   return {
@@ -102,11 +103,12 @@ export function criarMultidao(fabrica: FabricaDePessoas): Multidao {
         }
 
         const saindo = cliente.status === "leaving";
+        if (saindo && !visual.saindo) visual.reacao = cliente.satisfaction >= 70 ? "feliz" : "bravo";
         visual.saindo = saindo;
         visual.alvo = saindo ? ENTRADA : (destinos.get(cliente.id) ?? ENTRADA);
 
         if (saindo) {
-          visual.personagem.definirPedido(null);
+          visual.personagem.definirPedido(visual.reacao);
           visual.personagem.definirPaciencia(null);
           visual.personagem.definirCarga(null);
         } else if (cliente.status === "waiting") {

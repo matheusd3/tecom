@@ -21,7 +21,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { PALETA, cor, fosco, materialIcone, neon } from "./materials";
 
 export type TipoCarga = "produto" | "aparelho" | "caixa";
-export type TipoPedido = "produto" | "reparo";
+export type TipoPedido = "produto" | "reparo" | "feliz" | "bravo";
 
 export interface OpcoesPersonagem {
   nome: string;
@@ -92,6 +92,8 @@ export function criarFabricaDePessoas(scene: Scene): FabricaDePessoas {
     barraFundo: neon(scene, "matBarraFundo", "#0d1a22", 0.9),
     iconeProduto: materialIcone(scene, "iconeProduto", "produto", PALETA.lima),
     iconeReparo: materialIcone(scene, "iconeReparo", "reparo", PALETA.magenta),
+    iconeFeliz: materialIcone(scene, "iconeFeliz", "feliz", PALETA.lima),
+    iconeBravo: materialIcone(scene, "iconeBravo", "bravo", PALETA.vermelho),
     seta: neon(scene, "matSetaJogador", PALETA.lima, 1.3),
   };
 
@@ -112,6 +114,8 @@ type Compartilhados = {
   barraFundo: StandardMaterial;
   iconeProduto: StandardMaterial;
   iconeReparo: StandardMaterial;
+  iconeFeliz: StandardMaterial;
+  iconeBravo: StandardMaterial;
   seta: StandardMaterial;
 };
 
@@ -358,7 +362,7 @@ function montar(
         balao.setEnabled(false);
         return;
       }
-      balao.material = tipo === "produto" ? comum.iconeProduto : comum.iconeReparo;
+      balao.material = tipo === "produto" ? comum.iconeProduto : tipo === "reparo" ? comum.iconeReparo : tipo === "feliz" ? comum.iconeFeliz : comum.iconeBravo;
       balao.setEnabled(true);
     },
 
