@@ -14,8 +14,8 @@
   --texto-fraco: #8ba3ad;
   --borda: rgba(0, 229, 255, 0.22);
   --borda-magenta: rgba(255, 46, 151, 0.24);
-  --largura-esquerda: 380px;
-  --largura-direita: 320px;
+  --largura-esquerda: 322px;
+  --largura-direita: 272px;
   --altura-topo: 68px;
   --altura-faixa: 26px;
   --topo-total: calc(var(--altura-topo) + var(--altura-faixa));
@@ -887,6 +887,8 @@ button {
 
 /* ---------- Palco central ---------- */
 
+/* O palco é a janela para a loja 3D: os cartões encostam embaixo para que o
+   atendente, o balcão e a fila continuem visíveis o tempo todo. */
 .palco {
   position: absolute;
   top: var(--topo-total);
@@ -894,9 +896,11 @@ button {
   left: var(--largura-esquerda);
   right: var(--largura-direita);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
+  align-items: flex-end;
+  /* Canto inferior direito: é a parte da loja com menos ação — o balcão, a
+     fila e o atendente ficam à esquerda e continuam à vista. */
+  justify-content: flex-end;
+  padding: 12px 14px 14px;
   pointer-events: none;
 }
 
@@ -905,14 +909,15 @@ button {
 }
 
 .palco__card {
-  width: min(560px, 100%);
-  max-height: 100%;
+  width: min(390px, 100%);
+  max-height: min(44vh, 340px);
   overflow-y: auto;
-  padding: 22px;
+  padding: 18px 20px;
   border-radius: 14px;
   border: 1px solid var(--borda);
-  background: rgba(12, 17, 23, 0.94);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  background: rgba(12, 17, 23, 0.92);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
 }
 
 .palco__card--vazio {
@@ -961,6 +966,34 @@ button {
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 10px;
   margin-bottom: 16px;
+}
+
+/* Dentro do cartão estreito do palco tudo fica mais compacto, para o cartão
+   não crescer por cima da loja. */
+.palco__card .palco__kpis,
+.palco__card .posto__pedido {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 7px;
+  margin-bottom: 11px;
+}
+
+.palco__card .kpi {
+  padding: 6px 8px;
+}
+
+.palco__card .kpi__valor {
+  font-size: 13px;
+}
+
+.palco__card .palco__titulo {
+  font-size: 18px;
+  margin-bottom: 7px;
+}
+
+.palco__card .palco__texto,
+.palco__card .posto__historia {
+  font-size: 12px;
+  margin-bottom: 10px;
 }
 
 .kpi {
@@ -1201,6 +1234,75 @@ button {
   gap: 10px;
 }
 
+/* ---------- Controles da loja 3D ---------- */
+
+/* Sempre visível, encostado no topo do palco: nunca cobre o atendente, que
+   trabalha na faixa central da loja. */
+.controles-jogo {
+  position: absolute;
+  top: calc(var(--topo-total) + 10px);
+  left: calc(var(--largura-esquerda) + 16px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--borda);
+  background: rgba(6, 10, 14, 0.74);
+  backdrop-filter: blur(6px);
+  font-size: 11.5px;
+  color: var(--texto-fraco);
+  white-space: nowrap;
+}
+
+.controles-jogo__grupo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tecla {
+  display: inline-grid;
+  place-items: center;
+  min-width: 21px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 5px;
+  border: 1px solid var(--borda);
+  background: rgba(0, 229, 255, 0.08);
+  color: var(--ciano);
+  font-family: Orbitron, monospace;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.estacao-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  border: 1px solid currentColor;
+}
+
+.estacao-chip--livre {
+  color: var(--texto-fraco);
+  border-color: rgba(139, 163, 173, 0.4);
+}
+.estacao-chip--balcao {
+  color: var(--ciano);
+  background: rgba(0, 229, 255, 0.12);
+}
+.estacao-chip--estoque {
+  color: var(--lima);
+  background: rgba(182, 255, 58, 0.12);
+}
+.estacao-chip--assistencia {
+  color: var(--magenta);
+  background: rgba(255, 46, 151, 0.12);
+}
+
 /* ---------- Telas estreitas ---------- */
 
 @media (max-width: 1180px) {
@@ -1253,6 +1355,12 @@ button {
 
   .palco__card {
     padding: 14px;
+    max-height: 100%;
+  }
+
+  .controles-jogo {
+    left: 10px;
+    top: calc(var(--topo-total) + 26% + 8px);
   }
 
   .cronometro {
