@@ -33,7 +33,9 @@ export interface Multidao {
   dispose(): void;
 }
 
-const VELOCIDADE_CLIENTE = 4.2;
+// Casada com CUSTOMER_WALK_IN_SECONDS do GameWorld: o cliente chega ao balcão
+// no mesmo instante em que o núcleo passa a considerá-lo atendível.
+const VELOCIDADE_CLIENTE = 4.8;
 
 /** Cor estável por cliente: o mesmo cliente nunca troca de camiseta. */
 function semente(id: string): number {

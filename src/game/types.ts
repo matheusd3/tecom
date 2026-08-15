@@ -92,6 +92,20 @@ export interface RepairOrder {
   status: RepairStatus;
 }
 
+/**
+ * Pedido de desconto levantado pelo atendente auxiliar. Ele fecha venda no
+ * preço de vitrine sozinho; abaixo disso, quem decide é o dono da loja.
+ */
+export interface DiscountRequest {
+  customerId: string;
+  customerName: string;
+  productName: string;
+  showcasePrice: number;
+  customerPrice: number;
+  /** Quem pediu — aparece na tela para o jogador saber de onde veio. */
+  askedBy: string;
+}
+
 export interface GameState {
   time: number;
   timeSpeed: number;
@@ -119,6 +133,8 @@ export interface GameState {
   supportTask?: string;
   /** Que tipo de tarefa o auxiliar está fazendo — a cena usa para encenar o trajeto. */
   supportTaskKind?: "venda" | "levarReparo" | "trazerReparo";
+  /** Venda que o auxiliar não pode fechar sozinho: espera o aval do jogador. */
+  pendingDiscount?: DiscountRequest;
   missedSales: number;
   missedRepairs: number;
   idleEmployeeTime: number;

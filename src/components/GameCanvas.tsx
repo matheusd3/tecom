@@ -154,10 +154,18 @@ export default function GameCanvas() {
 
     const station = handle.getPlayerStation();
 
-    // A bancada pode ter um reparo pronto mesmo sem alguém aguardando na fila.
-    if (station === "assistencia" && !carriedRepairCustomerId && readyRepair) {
-      result = world.collectCompletedRepair(readyRepair.customerId);
-      if (result.ok) handle.pickUpRepair(readyRepair.customerId);
+    // A bancada não depende da fila: lá dentro há reparo pronto para retirar,
+    // aparelho para entregar ao técnico e conserto para ajudar a terminar.
+    if (station === "assistencia") {
+      if (carriedRepairCustomerId) {
+        result = world.acceptRepair(carriedRepairCustomerId);
+        if (result.ok) handle.putDownProduct();
+      } else if (readyRepair) {
+        result = world.collectCompletedRepair(readyRepair.customerId);
+        if (result.ok) handle.pickUpRepair(readyRepair.customerId);
+      } else {
+        result = world.helpRepair();
+      }
     } else if (!customer) {
       result = { ok: false, message: "Não há ninguém esperando para atender." };
     } else if (station === "estoque") {
@@ -208,15 +216,6 @@ export default function GameCanvas() {
           result = world.sellToCustomer(customer.id, preco);
           if (result.ok) handle.putDownProduct();
         }
-      }
-    } else if (station === "assistencia") {
-      if (carriedRepairCustomerId) {
-        result = world.acceptRepair(carriedRepairCustomerId);
-        if (result.ok) handle.putDownProduct();
-      } else if (!customer.needsService) {
-        result = { ok: false, message: "Este cliente quer comprar: pegue o item na prateleira." };
-      } else {
-        result = { ok: false, message: "Receba o aparelho no balcão e traga-o até esta bancada." };
       }
     } else {
       result = { ok: false, message: "Aproxime-se do balcão, das prateleiras ou da bancada para usar E." };
@@ -370,23 +369,51 @@ export default function GameCanvas() {
     [sincronizar]
   );
 
-  /** O jogador bateu o martelo: fecha a venda pelo valor que o cliente aceita. */
+  /**
+   * O pedido pode vir de dois lugares: do próprio jogador (item na mão, no
+   * balcão) ou do atendente auxiliar, que não fecha desconto sozinho. Os dois
+   * usam o mesmo cartão; só muda quem executa a venda depois do "aprovar".
+   */
+  const pedidoDoAuxiliar = instantaneo.gameState?.pendingDiscount;
+  const pedidoVisivel: PedidoDesconto | null =
+    pedidoDesconto ??
+    (pedidoDoAuxiliar
+      ? {
+          customerId: pedidoDoAuxiliar.customerId,
+          customerName: pedidoDoAuxiliar.customerName,
+          produto: pedidoDoAuxiliar.productName,
+          precoVitrine: pedidoDoAuxiliar.showcasePrice,
+          precoCliente: pedidoDoAuxiliar.customerPrice,
+          pedidoPor: pedidoDoAuxiliar.askedBy,
+        }
+      : null);
+
   const aprovarDesconto = useCallback(() => {
-    if (!pedidoDesconto) return;
-    const resultado = vender(pedidoDesconto.customerId, pedidoDesconto.precoCliente);
+    const world = worldRef.current;
+    if (!world) return;
+    // Quem está com o produto na mão fecha a venda; senão quem pediu foi o
+    // auxiliar, e é ele quem entrega no balcão.
+    const resultado = pedidoDesconto
+      ? vender(pedidoDesconto.customerId, pedidoDesconto.precoCliente)
+      : world.approveDiscount();
     mapActionRef.current = resultado;
     setPedidoDesconto(null);
     sincronizar();
   }, [pedidoDesconto, vender, sincronizar]);
 
   const recusarDesconto = useCallback(() => {
-    setPedidoDesconto(null);
-    mapActionRef.current = {
-      ok: true,
-      message: "Desconto recusado. O item continua na sua mão.",
-    };
+    const world = worldRef.current;
+    if (pedidoDesconto) {
+      setPedidoDesconto(null);
+      mapActionRef.current = {
+        ok: true,
+        message: "Desconto recusado. O item continua na sua mão.",
+      };
+    } else if (world) {
+      mapActionRef.current = world.declineDiscount();
+    }
     sincronizar();
-  }, [sincronizar]);
+  }, [pedidoDesconto, sincronizar]);
 
   const aceitarReparo = useCallback(
     (id: string): ActionResult => {
@@ -493,7 +520,7 @@ export default function GameCanvas() {
           playerStation={instantaneo.playerStation}
           carriedProductName={instantaneo.carriedProductName}
           mapAction={instantaneo.mapAction}
-          pedidoDesconto={pedidoDesconto}
+          pedidoDesconto={pedidoVisivel}
           onAprovarDesconto={aprovarDesconto}
           onRecusarDesconto={recusarDesconto}
           capacidades={capacidades}

@@ -36,6 +36,8 @@ export interface PedidoDesconto {
   produto: string;
   precoVitrine: number;
   precoCliente: number;
+  /** Preenchido quando quem pediu foi o atendente auxiliar. */
+  pedidoPor?: string;
 }
 
 interface GameUIProps {
@@ -1052,8 +1054,9 @@ function AprovacaoDeDesconto({
       </header>
 
       <p className="palco__texto">
-        {pedido.customerName} não paga o preço de vitrine. O atendente está com o
-        item na mão, esperando você decidir.
+        {pedido.pedidoPor
+          ? `${pedido.pedidoPor} está no balcão com ${pedido.customerName}, que não paga o preço de vitrine, e não fecha desconto sem o seu aval.`
+          : `${pedido.customerName} não paga o preço de vitrine. O atendente está com o item na mão, esperando você decidir.`}
       </p>
 
       <div className="posto__pedido">

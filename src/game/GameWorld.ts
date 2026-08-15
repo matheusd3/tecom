@@ -19,6 +19,16 @@ const CUSTOMER_PATIENCE_PER_SECOND = 0.38;
 const CUSTOMER_SPAWN_MIN_SECONDS = 7;
 const CUSTOMER_SPAWN_MAX_SECONDS = 15;
 const SHIFT_DURATION = 120;
+/**
+ * Tempo que o cliente leva da porta até o balcão. Ninguém pode ser atendido
+ * antes de chegar: sem isso o atendente auxiliar fechava a venda enquanto o
+ * cliente ainda estava atravessando a loja.
+ */
+const CUSTOMER_WALK_IN_SECONDS = 2.5;
+/** Quanto cada ajuda do jogador tira do prazo do conserto. */
+const REPAIR_HELP_SECONDS = 7;
+/** Intervalo mínimo entre duas ajudas, para E repetido não zerar o reparo. */
+const REPAIR_HELP_COOLDOWN = 2;
 const CUSTOMER_NAMES = [
   "Bia do RGB", "Caio do TCC", "Nando da LAN", "Dona Cida", "Rafa do home office",
   "Léo do podcast", "Maya do campeonato", "Seu Osmar", "Pri da entrevista", "Gui do servidor",
@@ -40,6 +50,7 @@ export class GameWorld {
   private shiftStartReputation = 60;
   private shiftReport: ShiftReport | null = null;
   private customerSequence = 0;
+  private lastRepairHelpAt = -Infinity;
   private shiftHighlights: string[] = [];
   private supportAttendantTimer = 0;
 
@@ -59,6 +70,11 @@ export class GameWorld {
     this.processRepairs();
     this.runSupportAttendant(elapsed);
     this.removeDepartedCustomers();
+    // Desconto pendente morre com o cliente que o motivou.
+    if (this.state.pendingDiscount) {
+      const cliente = this.state.customers.get(this.state.pendingDiscount.customerId);
+      if (!cliente || cliente.status !== "waiting") this.state.pendingDiscount = undefined;
+    }
     this.processPayroll();
     this.updateDemand(elapsed);
     this.updateAverages();
@@ -180,6 +196,9 @@ export class GameWorld {
     if (!customer?.needsProduct || customer.status !== "waiting") {
       return { ok: false, message: "Esse cliente não está disponível para atendimento." };
     }
+    if (!this.chegouAoBalcao(customer)) {
+      return { ok: false, message: `${customer.name} ainda está entrando na loja.` };
+    }
     const escolhido = sellerId ? this.state.employees.get(sellerId) : this.availableEmployee("seller");
     const seller = escolhido && !escolhido.isBusy ? escolhido : undefined;
     if (!seller) return { ok: false, message: "Todos os vendedores estão ocupados." };
@@ -215,6 +234,9 @@ export class GameWorld {
     if (!customer?.needsService || customer.status !== "waiting") {
       return { ok: false, message: "Esse reparo não está disponível." };
     }
+    if (!this.chegouAoBalcao(customer)) {
+      return { ok: false, message: `${customer.name} ainda está entrando na loja.` };
+    }
     customer.status = "beingServed";
     // Depois de receber o aparelho, ele deixa a fila. A próxima interação deve
     // mirar um cliente que ainda aguarda, não o reparo que já está em trânsito.
@@ -247,6 +269,68 @@ export class GameWorld {
     return technician
       ? { ok: true, message: `Aparelho na bancada: previsão de ${Math.ceil(duration)} s de jogo.` }
       : { ok: true, message: "Técnico ocupado: aparelho entrou na pilha da assistência." };
+  }
+
+  /**
+   * O jogador põe a mão no conserto. Se ninguém começou (técnico ocupado), ele
+   * mesmo assume a bancada; se já está rodando, cada ajuda encurta o prazo.
+   */
+  public helpRepair(): ActionResult {
+    const naFila = this.state.repairs.find((repair) => repair.status === "queued");
+    if (naFila) {
+      // Sem técnico livre quem trabalha é o jogador — e rende menos que um
+      // profissional, senão contratar técnico não faria diferença.
+      const duracao = Math.max(24, 58 - 35 * 0.3);
+      naFila.startTime = this.state.time;
+      naFila.endTime = this.state.time + duracao;
+      naFila.status = "inProgress";
+      naFila.technicianId = undefined;
+      this.lastRepairHelpAt = this.state.time;
+      this.addHighlight("Sem técnico livre: o próprio atendente assumiu um conserto.");
+      return { ok: true, message: `Você assumiu o conserto: ${Math.ceil(duracao)} s de jogo.` };
+    }
+
+    const emAndamento = this.state.repairs.find((repair) => repair.status === "inProgress");
+    if (!emAndamento?.endTime) {
+      return { ok: false, message: "Não há conserto para ajudar nesta bancada." };
+    }
+    if (this.state.time - this.lastRepairHelpAt < REPAIR_HELP_COOLDOWN) {
+      return { ok: false, message: "Calma: deixe o técnico trabalhar um pouco antes de ajudar de novo." };
+    }
+    this.lastRepairHelpAt = this.state.time;
+    const restanteAntes = emAndamento.endTime - this.state.time;
+    emAndamento.endTime = this.state.time + Math.max(2, restanteAntes - REPAIR_HELP_SECONDS);
+    const restante = Math.ceil(emAndamento.endTime - this.state.time);
+    const tecnico = emAndamento.technicianId ? this.state.employees.get(emAndamento.technicianId) : undefined;
+    if (tecnico) tecnico.busyUntil = emAndamento.endTime;
+    return { ok: true, message: `Você ajudou no conserto: faltam ${restante} s.` };
+  }
+
+  /** Fecha a venda que o auxiliar não podia decidir sozinho. */
+  public approveDiscount(): ActionResult {
+    const pedido = this.state.pendingDiscount;
+    if (!pedido) return { ok: false, message: "Não há desconto esperando aprovação." };
+    const helper = Array.from(this.state.employees.values()).find(
+      (employee) => employee.role === "seller" && employee.id !== "seller-1" && !employee.isBusy
+    );
+    const resultado = this.sellToCustomer(pedido.customerId, pedido.customerPrice, helper?.id);
+    if (resultado.ok) {
+      this.state.pendingDiscount = undefined;
+      this.state.supportTask = `${pedido.askedBy} fechou ${pedido.productName} com o desconto aprovado.`;
+      this.state.supportTaskKind = "venda";
+      if (helper) {
+        helper.isBusy = true;
+        helper.busyUntil = this.state.time + 4;
+      }
+    }
+    return resultado;
+  }
+
+  public declineDiscount(): ActionResult {
+    const pedido = this.state.pendingDiscount;
+    if (!pedido) return { ok: false, message: "Não há desconto esperando aprovação." };
+    this.state.pendingDiscount = undefined;
+    return { ok: true, message: `Preço mantido para ${pedido.customerName}.` };
   }
 
   /** Retira um reparo pronto para devolvê-lo ao balcão. */
@@ -424,9 +508,13 @@ export class GameWorld {
       this.state.supportTaskKind = tipo;
     };
 
+    const atendivel = (customer: Customer) =>
+      customer.status === "waiting" &&
+      this.chegouAoBalcao(customer) &&
+      customer.id !== this.state.selectedCustomerId;
+
     const vendaDireta = Array.from(this.state.customers.values()).find((customer) => {
-      if (customer.status !== "waiting" || !customer.needsProduct) return false;
-      if (customer.id === this.state.selectedCustomerId) return false;
+      if (!atendivel(customer) || !customer.needsProduct) return false;
       const product = this.state.products.get(customer.needsProduct);
       return !!product && product.stock > 0 && customer.budget >= product.sellingPrice;
     });
@@ -439,8 +527,33 @@ export class GameWorld {
       }
     }
 
+    // Cliente que quer comprar mas não paga a vitrine: o auxiliar não decide,
+    // ele PERGUNTA. Antes ele simplesmente pulava, e de fora parecia que o
+    // vendedor às vezes trabalhava e às vezes não.
+    if (!this.state.pendingDiscount) {
+      const precisaAval = Array.from(this.state.customers.values()).find((customer) => {
+        if (!atendivel(customer) || !customer.needsProduct) return false;
+        const product = this.state.products.get(customer.needsProduct);
+        return !!product && product.stock > 0 && customer.budget < product.sellingPrice;
+      });
+      if (precisaAval?.needsProduct) {
+        const product = this.state.products.get(precisaAval.needsProduct)!;
+        this.state.pendingDiscount = {
+          customerId: precisaAval.id,
+          customerName: precisaAval.name,
+          productName: product.name,
+          showcasePrice: product.sellingPrice,
+          customerPrice: precisaAval.budget,
+          askedBy: helper.name,
+        };
+        this.state.supportTask = `${helper.name} pediu aprovação de desconto em ${product.name}.`;
+        this.state.supportTaskKind = undefined;
+        return;
+      }
+    }
+
     const waitingRepair = Array.from(this.state.customers.values()).find(
-      (customer) => customer.status === "waiting" && customer.needsService && customer.id !== this.state.selectedCustomerId
+      (customer) => atendivel(customer) && customer.needsService
     );
     if (waitingRepair) {
       this.receiveRepair(waitingRepair.id);
@@ -454,6 +567,11 @@ export class GameWorld {
       this.returnRepairToCustomer(readyRepair.customerId);
       ocupar(`${helper.name} devolveu um reparo pronto ao balcão.`, "trazerReparo");
     }
+  }
+
+  /** O cliente só pode ser atendido depois de atravessar a loja. */
+  private chegouAoBalcao(customer: Customer): boolean {
+    return this.state.time - customer.arrivalTime >= CUSTOMER_WALK_IN_SECONDS;
   }
 
   private releaseFinishedEmployees(): void {
