@@ -21,6 +21,7 @@ import type {
   ShiftReport,
 } from "@/game/types";
 import { GameUI, type Capacidades, type PedidoDesconto } from "./GameUI";
+import { Soundtrack } from "@/audio/Soundtrack";
 
 interface Instantaneo {
   gameState: GameState | null;
@@ -81,6 +82,7 @@ export default function GameCanvas() {
   const worldRef = useRef<GameWorld | null>(null);
   const handleRef = useRef<GameHandle | null>(null);
   const mapActionRef = useRef<ActionResult | null>(null);
+  const soundtrackRef = useRef<Soundtrack | null>(null);
 
   const [instantaneo, setInstantaneo] = useState<Instantaneo>({
     gameState: null,
@@ -97,6 +99,8 @@ export default function GameCanvas() {
   const [erro, setErro] = useState<string | null>(null);
   /** Venda abaixo da vitrine esperando o "pode fechar" do jogador. */
   const [pedidoDesconto, setPedidoDesconto] = useState<PedidoDesconto | null>(null);
+  const [musicaAtiva, setMusicaAtiva] = useState(false);
+  const [volumeMusica, setVolumeMusica] = useState(65);
 
   /** Copia o estado atual da simulação para o React. */
   const sincronizar = useCallback(() => {
@@ -328,6 +332,25 @@ export default function GameCanvas() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [interagirComEstacao]);
 
+  useEffect(() => () => soundtrackRef.current?.dispose(), []);
+
+  const alternarMusica = useCallback(() => {
+    const soundtrack = soundtrackRef.current ?? new Soundtrack();
+    soundtrackRef.current = soundtrack;
+    if (soundtrack.isPlaying) {
+      soundtrack.stop();
+      setMusicaAtiva(false);
+      return;
+    }
+    soundtrack.setVolume(volumeMusica / 100);
+    void soundtrack.start().then(() => setMusicaAtiva(true));
+  }, [volumeMusica]);
+
+  const mudarVolumeMusica = useCallback((volume: number) => {
+    setVolumeMusica(volume);
+    soundtrackRef.current?.setVolume(volume / 100);
+  }, []);
+
   // ---- Ações da interface ligadas aos métodos públicos do GameWorld ----
 
   const iniciarTurno = useCallback(() => {
@@ -555,6 +578,10 @@ export default function GameCanvas() {
           onDecline={recusar}
           onTogglePause={alternarPausa}
           onTimeSpeedChange={mudarVelocidade}
+          musicaAtiva={musicaAtiva}
+          volumeMusica={volumeMusica}
+          onToggleMusic={alternarMusica}
+          onMusicVolumeChange={mudarVolumeMusica}
           onBuyStock={comprarEstoque}
           onSetPrice={definirPreco}
           onHire={contratar}

@@ -156,6 +156,18 @@ button {
   gap: 6px;
 }
 
+.controle-musica {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.controle-musica__volume {
+  width: 62px;
+  accent-color: var(--ciano);
+  cursor: pointer;
+}
+
 /* ---------- Botões ---------- */
 
 .btn {

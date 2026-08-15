@@ -62,6 +62,10 @@ interface GameUIProps {
   onDecline: (id: string) => ActionResult;
   onTogglePause: () => void;
   onTimeSpeedChange: (velocidade: number) => void;
+  musicaAtiva: boolean;
+  volumeMusica: number;
+  onToggleMusic: () => void;
+  onMusicVolumeChange: (volume: number) => void;
   onBuyStock: (tipo: ProductType, quantidade: number) => boolean;
   onSetPrice: (tipo: ProductType, preco: number) => boolean;
   onHire: (funcao: EmployeeRole, nome: string) => boolean;
@@ -167,6 +171,7 @@ const ICONES = {
     "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
   play: "M5 3l14 9-14 9V3z",
   pause: "M6 4h4v16H6zM14 4h4v16h-4z",
+  musica: "M9 18V5l11-2v13M9 18a3 3 0 1 1-2-2.83M20 16a3 3 0 1 1-2-2.83V3",
 } as const;
 
 function Icone({ d }: { d: string }) {
@@ -421,6 +426,26 @@ export function GameUI(props: GameUIProps) {
         </div>
 
         <div className="controles-tempo">
+          <div className="controle-musica">
+            <button
+              className={`btn btn--pequeno ${props.musicaAtiva ? "btn--ativo" : ""}`}
+              onClick={props.onToggleMusic}
+              title="Trilha original synth-rock retrô"
+            >
+              <Icone d={ICONES.musica} /> {props.musicaAtiva ? "Trilha" : "Som"}
+            </button>
+            {props.musicaAtiva && (
+              <input
+                className="controle-musica__volume"
+                type="range"
+                aria-label="Volume da trilha sonora"
+                min="0"
+                max="100"
+                value={props.volumeMusica}
+                onChange={(event) => props.onMusicVolumeChange(Number(event.target.value))}
+              />
+            )}
+          </div>
           {/* Fora do turno não há relógio para pausar: o botão sumir evita
               um controle morto na barra. */}
           {emTurno && (
