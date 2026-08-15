@@ -166,13 +166,25 @@ export default function GameCanvas() {
       } else {
         result = world.helpRepair();
       }
+    } else if (station === "estoque" && (carriedProduct || carriedRepairCustomerId)) {
+      // Devolver é o único jeito de destravar as mãos quando a venda não sai
+      // (cliente dispensado, desconto recusado, item errado). Vem antes da
+      // checagem de fila justamente porque costuma não haver mais ninguém.
+      if (carriedRepairCustomerId) {
+        result = {
+          ok: false,
+          message: "Isso é o aparelho de um cliente: leve-o à bancada técnica.",
+        };
+      } else {
+        const nome = carriedProduct ? state.products.get(carriedProduct)?.name : undefined;
+        handle.putDownProduct();
+        result = { ok: true, message: `${nome ?? "Produto"} devolvido à prateleira.` };
+      }
     } else if (!customer) {
       result = { ok: false, message: "Não há ninguém esperando para atender." };
     } else if (station === "estoque") {
       if (!customer.needsProduct) {
         result = { ok: false, message: "Este cliente precisa ir para a bancada técnica, não para a prateleira." };
-      } else if (handle.getCarriedProduct()) {
-        result = { ok: false, message: "Você já está carregando um produto. Leve-o até o balcão." };
       } else if ((state.products.get(customer.needsProduct)?.stock ?? 0) <= 0) {
         result = { ok: false, message: "Não há estoque desse produto na prateleira." };
       } else {
@@ -342,15 +354,27 @@ export default function GameCanvas() {
         return { ok: false, message: "Este cliente precisa da assistência técnica." };
       }
       if (handle.getPlayerStation() === "estoque") {
-        if (handle.getCarriedProduct()) {
+        const naMao = handle.getCarriedProduct();
+        if (naMao === customer.needsProduct) {
           return { ok: false, message: "Você já pegou o produto. Agora leve-o até o balcão." };
+        }
+        if (handle.getCarriedRepairCustomerId()) {
+          return { ok: false, message: "Você está com o aparelho de um cliente: leve-o à bancada técnica." };
         }
         if ((world.getState().products.get(customer.needsProduct)?.stock ?? 0) <= 0) {
           return { ok: false, message: "Não há estoque desse produto na prateleira." };
         }
+        // Com o item errado na mão, um clique só troca: devolve e pega o certo.
+        if (naMao) handle.putDownProduct();
         world.selectCustomer(id);
         handle.pickUpProduct(customer.needsProduct);
-        const result = { ok: true, message: `Você pegou o produto. Agora volte ao balcão para vender.` };
+        const nome = world.getState().products.get(customer.needsProduct)?.name ?? "o produto";
+        const result = {
+          ok: true,
+          message: naMao
+            ? `Você trocou pelo ${nome}. Agora volte ao balcão para vender.`
+            : `Você pegou ${nome}. Agora volte ao balcão para vender.`,
+        };
         mapActionRef.current = result;
         sincronizar();
         return result;
