@@ -73,13 +73,11 @@ export async function createGameScene(
   const luz = new HemisphericLight("luz", new Vector3(0, 1, 0), scene);
   luz.intensity = 1.1;
 
-  const { prateleiras } = criarAmbiente(scene);
+  criarAmbiente(scene);
   const player = criarAtendente(scene);
 
   const world = new GameWorld();
   gameWorld = world;
-
-  let tempoAnimacao = 0;
 
   return {
     scene,
@@ -87,13 +85,7 @@ export async function createGameScene(
     update(deltaSeconds: number) {
       world.update(deltaSeconds);
 
-      // Animação puramente estética, independente de pausa do jogo.
-      tempoAnimacao += deltaSeconds;
-      camera.alpha = -Math.PI / 2 + Math.sin(tempoAnimacao * 0.05) * 0.25;
       player.update(deltaSeconds);
-      prateleiras.forEach((mesh, i) => {
-        mesh.rotation.y = Math.sin(tempoAnimacao * 0.35 + i) * 0.05;
-      });
     },
     getPlayerStation() {
       return player.station();
@@ -117,37 +109,89 @@ export async function createGameScene(
   };
 }
 
-function criarAmbiente(scene: Scene): { prateleiras: Mesh[] } {
-  // Grade neon no chão
+function criarAmbiente(scene: Scene): void {
+  const chao = CreateGround("loja-chao", { width: 76, height: 58 }, scene);
+  const matChao = new StandardMaterial("mat-loja-chao", scene);
+  matChao.diffuseColor = new Color3(0.025, 0.04, 0.055);
+  matChao.specularColor = Color3.Black();
+  chao.material = matChao;
+
+  // Grade sutil sobre o piso: decoração, não uma plataforma flutuante.
   const grade = CreateGround(
     "grade",
     { width: 76, height: 58, subdivisions: 20 },
     scene
   );
+  grade.position.y = 0.02;
   const matGrade = new StandardMaterial("matGrade", scene);
   matGrade.wireframe = true;
   matGrade.disableLighting = true;
   matGrade.emissiveColor = CIANO.scale(0.22);
   grade.material = matGrade;
 
-  const cores = [CIANO, MAGENTA, LIMA, CIANO, MAGENTA];
-  const prateleiras: Mesh[] = cores.map((cor, i) => {
-    const bloco = CreateBox(`prateleira-${i}`, { width: 5, height: 7, depth: 2 }, scene);
-    bloco.position = new Vector3(-27 + i * 8, 3.5, 15);
+  criarParede(scene, "parede-fundo", new Vector3(0, 6, 27), new Vector3(76, 12, 1), new Color3(0.04, 0.075, 0.09));
+  criarParede(scene, "parede-esquerda", new Vector3(-37.5, 6, 0), new Vector3(1, 12, 58), new Color3(0.03, 0.06, 0.075));
+  criarParede(scene, "parede-direita", new Vector3(37.5, 6, 0), new Vector3(1, 12, 58), new Color3(0.03, 0.06, 0.075));
 
-    const mat = new StandardMaterial(`matPrateleira-${i}`, scene);
-    mat.disableLighting = true;
-    mat.emissiveColor = cor.scale(0.55);
-    mat.alpha = 0.85;
-    bloco.material = mat;
-    return bloco;
-  });
+  // Entrada frontal e vitrines laterais.
+  criarParede(scene, "vitrine-esquerda", new Vector3(-24, 5, -27), new Vector3(24, 10, 0.7), new Color3(0.035, 0.08, 0.1));
+  criarParede(scene, "vitrine-direita", new Vector3(24, 5, -27), new Vector3(24, 10, 0.7), new Color3(0.035, 0.08, 0.1));
+  criarParede(scene, "porta-loja", new Vector3(0, 4.5, -27), new Vector3(10, 9, 0.35), new Color3(0.06, 0.15, 0.18));
+
+  criarPrateleira(scene, "estoque-a", new Vector3(-24, 0, 15), CIANO);
+  criarPrateleira(scene, "estoque-b", new Vector3(-10, 0, 15), MAGENTA);
+  criarPrateleira(scene, "estoque-c", new Vector3(4, 0, 15), LIMA);
+  criarPrateleira(scene, "estoque-d", new Vector3(18, 0, 15), CIANO);
+
+  criarBalcao(scene);
+  criarBancadaTecnica(scene);
 
   criarEstacao(scene, "balcao", new Vector3(0, 0.25, -15), new Vector3(16, 0.5, 4), MAGENTA);
   criarEstacao(scene, "bancada", new Vector3(26, 0.25, 9), new Vector3(9, 0.5, 6), LIMA);
   criarEstacao(scene, "prateleira", new Vector3(-11, 0.2, 15), new Vector3(38, 0.4, 8), CIANO);
+}
 
-  return { prateleiras };
+function criarParede(scene: Scene, name: string, position: Vector3, size: Vector3, color: Color3): void {
+  const wall = CreateBox(name, { width: size.x, height: size.y, depth: size.z }, scene);
+  wall.position = position;
+  const material = new StandardMaterial(`mat-${name}`, scene);
+  material.diffuseColor = color;
+  material.emissiveColor = color.scale(0.18);
+  material.specularColor = Color3.Black();
+  wall.material = material;
+}
+
+function criarPrateleira(scene: Scene, name: string, position: Vector3, accent: Color3): void {
+  const escuro = new Color3(0.06, 0.09, 0.11);
+  criarParede(scene, `${name}-corpo`, new Vector3(position.x, 3.5, position.z), new Vector3(10, 7, 2.2), escuro);
+  for (let tier = 0; tier < 3; tier++) {
+    criarParede(scene, `${name}-nivel-${tier}`, new Vector3(position.x, 1.45 + tier * 2, position.z - 1.22), new Vector3(9.2, 0.18, 0.35), accent.scale(0.55));
+    for (let item = 0; item < 3; item++) {
+      const caixa = CreateBox(`${name}-produto-${tier}-${item}`, { width: 1.65, height: 1.05, depth: 0.8 }, scene);
+      caixa.position = new Vector3(position.x - 3 + item * 3, 0.75 + tier * 2, position.z - 1.35);
+      const material = new StandardMaterial(`mat-${name}-produto-${tier}-${item}`, scene);
+      material.disableLighting = true;
+      material.emissiveColor = (item === 1 ? accent : CIANO).scale(0.52);
+      caixa.material = material;
+    }
+  }
+}
+
+function criarBalcao(scene: Scene): void {
+  criarParede(scene, "balcao-corpo", new Vector3(0, 1.7, -16.2), new Vector3(16, 3.2, 2.4), new Color3(0.09, 0.04, 0.085));
+  criarParede(scene, "balcao-tampo", new Vector3(0, 3.45, -16.2), new Vector3(16.5, 0.28, 2.7), MAGENTA.scale(0.48));
+  criarParede(scene, "balcao-faixa", new Vector3(0, 1.7, -17.45), new Vector3(14, 0.28, 0.15), MAGENTA);
+}
+
+function criarBancadaTecnica(scene: Scene): void {
+  criarParede(scene, "bancada-corpo", new Vector3(26, 1.55, 9), new Vector3(9, 3, 4.8), new Color3(0.045, 0.095, 0.06));
+  criarParede(scene, "bancada-tampo", new Vector3(26, 3.18, 9), new Vector3(9.4, 0.26, 5.15), LIMA.scale(0.45));
+  const monitor = CreateBox("bancada-monitor", { width: 2.8, height: 1.8, depth: 0.22 }, scene);
+  monitor.position = new Vector3(26, 4.25, 9.7);
+  const matMonitor = new StandardMaterial("mat-bancada-monitor", scene);
+  matMonitor.disableLighting = true;
+  matMonitor.emissiveColor = LIMA.scale(0.65);
+  monitor.material = matMonitor;
 }
 
 function criarEstacao(scene: Scene, name: string, position: Vector3, size: Vector3, color: Color3): void {
