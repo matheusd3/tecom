@@ -236,7 +236,7 @@ function criarAtendente(scene: Scene): {
     station() {
       if (Vector3.Distance(root.position, new Vector3(0, 0, -15)) < 9) return "balcao";
       if (Vector3.Distance(root.position, new Vector3(-11, 0, 15)) < 20) return "prateleira";
-      if (Vector3.Distance(root.position, new Vector3(26, 0, 9)) < 7) return "bancada";
+      if (Vector3.Distance(root.position, new Vector3(26, 0, 9)) < 11) return "bancada";
       return "loja";
     },
     carriedProduct() {

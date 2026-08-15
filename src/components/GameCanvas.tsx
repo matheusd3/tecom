@@ -269,16 +269,34 @@ export default function GameCanvas() {
   const vender = useCallback(
     (id: string, preco: number): ActionResult => {
       const world = worldRef.current;
-      if (!world) return FALHA_SEM_NUCLEO;
-      if (handleRef.current?.getPlayerStation() !== "balcao") {
-        return { ok: false, message: "Vá até o balcão para concluir a venda." };
-      }
+      const handle = handleRef.current;
+      if (!world || !handle) return FALHA_SEM_NUCLEO;
       const customer = world.getState().customers.get(id);
-      if (!customer?.needsProduct || handleRef.current.getCarriedProduct() !== customer.needsProduct) {
-        return { ok: false, message: "Pegue o produto pedido nas prateleiras antes de fechar a venda." };
+      if (!customer?.needsProduct) {
+        return { ok: false, message: "Este cliente precisa da assistência técnica." };
+      }
+      if (handle.getPlayerStation() === "prateleira") {
+        if (handle.getCarriedProduct()) {
+          return { ok: false, message: "Você já pegou o produto. Agora leve-o até o balcão." };
+        }
+        if ((world.getState().products.get(customer.needsProduct)?.stock ?? 0) <= 0) {
+          return { ok: false, message: "Não há estoque desse produto na prateleira." };
+        }
+        world.selectCustomer(id);
+        handle.pickUpProduct(customer.needsProduct);
+        const result = { ok: true, message: `Você pegou o produto. Agora volte ao balcão para vender.` };
+        mapActionRef.current = result;
+        sincronizar();
+        return result;
+      }
+      if (handle.getPlayerStation() !== "balcao") {
+        return { ok: false, message: "Vá às prateleiras para pegar o produto ou ao balcão para vender." };
+      }
+      if (handle.getCarriedProduct() !== customer.needsProduct) {
+        return { ok: false, message: "Vá às prateleiras e clique em Vender para pegar o produto pedido." };
       }
       const resultado = world.sellToCustomer(id, preco);
-      if (resultado.ok) handleRef.current.putDownProduct();
+      if (resultado.ok) handle.putDownProduct();
       sincronizar();
       return resultado;
     },
