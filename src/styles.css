@@ -732,7 +732,7 @@ button {
 .aviso {
   position: absolute;
   left: 50%;
-  bottom: 24px;
+  top: calc(var(--topo-total) + 52px);
   transform: translateX(-50%);
   padding: 9px 18px;
   border-radius: 8px;
@@ -890,19 +890,13 @@ button {
 .controle-personagem {
   position: absolute;
   left: 50%;
-  bottom: 18px;
+  top: calc(var(--altura-topo) + 2px);
   transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  max-width: min(540px, calc(100vw - var(--largura-esquerda) - var(--largura-direita) - 32px));
-  padding: 8px 13px;
-  border: 1px solid rgba(182, 255, 58, 0.55);
-  border-radius: 8px;
-  background: rgba(5, 10, 13, 0.84);
+  max-width: min(720px, calc(100vw - 260px));
+  padding: 3px 12px;
+  border-radius: 5px;
+  background: rgba(5, 10, 13, 0.76);
   color: var(--lima);
-  box-shadow: 0 0 20px rgba(182, 255, 58, 0.13);
   text-align: center;
   pointer-events: none;
   z-index: 4;
@@ -910,12 +904,8 @@ button {
 
 .controle-personagem strong {
   font-family: Orbitron, monospace;
-  font-size: 11px;
-}
-
-.controle-personagem span {
-  color: var(--texto-fraco);
-  font-size: 10px;
+  font-size: 9px;
+  white-space: nowrap;
 }
 
 /* ---------- Palco central ---------- */
@@ -956,59 +946,6 @@ button {
   padding: 8px 10px;
 }
 
-/* Avatar 2D espelha a posição do modelo 3D: permanece legível mesmo quando
-   a câmera está parcialmente coberta pelos painéis da loja. */
-.atendente-visual {
-  position: absolute;
-  z-index: 2;
-  width: 42px;
-  height: 62px;
-  transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  filter: drop-shadow(0 0 9px rgba(0, 229, 255, 0.8));
-  pointer-events: none !important;
-  transition: left 0.12s linear, top 0.12s linear;
-}
-
-.atendente-visual__nome {
-  position: absolute;
-  top: -16px;
-  font-family: Orbitron, monospace;
-  font-size: 8px;
-  font-weight: 800;
-  color: var(--lima);
-  letter-spacing: 0.7px;
-}
-
-.atendente-visual__cabeca {
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--magenta);
-  border-radius: 50%;
-  background: #321226;
-}
-
-.atendente-visual__corpo {
-  width: 28px;
-  height: 31px;
-  margin-top: 2px;
-  border: 2px solid var(--ciano);
-  border-radius: 8px 8px 5px 5px;
-  background: rgba(0, 229, 255, 0.25);
-}
-
-.atendente-visual__caixa {
-  position: absolute;
-  right: -8px;
-  bottom: 4px;
-  width: 16px;
-  height: 13px;
-  border: 2px solid var(--lima);
-  border-radius: 2px;
-  background: rgba(182, 255, 58, 0.24);
-}
 
 .palco__card {
   width: min(560px, 100%);

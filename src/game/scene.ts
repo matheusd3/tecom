@@ -28,7 +28,6 @@ export interface GameHandle {
   world: GameWorld;
   /** Posição atual do atendente para a interface contextual. */
   getPlayerStation(): PlayerStation;
-  getPlayerPosition(): { x: number; z: number };
   getCarriedProduct(): ProductType | undefined;
   pickUpProduct(productType: ProductType): boolean;
   putDownProduct(): void;
@@ -99,9 +98,6 @@ export async function createGameScene(
     getPlayerStation() {
       return player.station();
     },
-    getPlayerPosition() {
-      return player.position();
-    },
     getCarriedProduct() {
       return player.carriedProduct();
     },
@@ -167,16 +163,15 @@ function criarEstacao(scene: Scene, name: string, position: Vector3, size: Vecto
 function criarAtendente(scene: Scene): {
   update(deltaSeconds: number): void;
   station(): PlayerStation;
-  position(): { x: number; z: number };
   carriedProduct(): ProductType | undefined;
   pickUpProduct(productType: ProductType): boolean;
   putDownProduct(): void;
   dispose(): void;
 } {
   const root = new TransformNode("atendente", scene);
-  // Começa na área aberta da loja, abaixo do painel de atendimento, para o
-  // jogador ver imediatamente quem está controlando.
-  root.position = new Vector3(0, 0, 9);
+  // Começa em frente ao balcão, na parte aberta do enquadramento. Assim o
+  // atendente permanece visível mesmo quando há um cartão de cliente aberto.
+  root.position = new Vector3(0, 0, -18);
   const corpo = CreateBox("atendente-corpo", { width: 1.7, height: 2.4, depth: 1.2 }, scene);
   corpo.parent = root;
   corpo.position.y = 1.2;
@@ -243,9 +238,6 @@ function criarAtendente(scene: Scene): {
       if (Vector3.Distance(root.position, new Vector3(-11, 0, 15)) < 20) return "prateleira";
       if (Vector3.Distance(root.position, new Vector3(26, 0, 9)) < 7) return "bancada";
       return "loja";
-    },
-    position() {
-      return { x: root.position.x, z: root.position.z };
     },
     carriedProduct() {
       return produtoCarregado;
