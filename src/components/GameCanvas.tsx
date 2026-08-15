@@ -27,6 +27,8 @@ interface Instantaneo {
   opportunities: Opportunity[];
   shiftReport: ShiftReport | null;
   playerStation: PlayerStation;
+  carriedProductName?: string;
+  mapAction: ActionResult | null;
 }
 
 /** Frequência de sincronização entre a simulação e o React. */
@@ -78,12 +80,14 @@ export default function GameCanvas() {
   const startedRef = useRef(false);
   const worldRef = useRef<GameWorld | null>(null);
   const handleRef = useRef<GameHandle | null>(null);
+  const mapActionRef = useRef<ActionResult | null>(null);
 
   const [instantaneo, setInstantaneo] = useState<Instantaneo>({
     gameState: null,
     opportunities: [],
     shiftReport: null,
     playerStation: "loja",
+    mapAction: null,
   });
   const [capacidades, setCapacidades] = useState<Capacidades>({
     iniciarTurno: false,
@@ -101,8 +105,64 @@ export default function GameCanvas() {
       opportunities: [...world.getOpportunities()],
       shiftReport: lerRelatorio(world),
       playerStation: handleRef.current?.getPlayerStation() ?? "loja",
+      carriedProductName: (() => {
+        const type = handleRef.current?.getCarriedProduct();
+        return type ? world.getState().products.get(type)?.name : undefined;
+      })(),
+      mapAction: mapActionRef.current,
     });
   }, []);
+
+  /** A interação por teclado usa o cliente priorizado — ou o primeiro da fila. */
+  const interagirComEstacao = useCallback(() => {
+    const world = worldRef.current;
+    const handle = handleRef.current;
+    if (!world || !handle) return;
+    const state = world.getState();
+    const customer = state.selectedCustomerId
+      ? state.customers.get(state.selectedCustomerId)
+      : Array.from(state.customers.values()).find((item) => item.status === "waiting");
+    let result: ActionResult;
+
+    if (!customer) {
+      result = { ok: false, message: "Não há ninguém esperando para atender." };
+    } else if (handle.getPlayerStation() === "prateleira") {
+      if (!customer.needsProduct) {
+        result = { ok: false, message: "Este cliente precisa ir para a bancada técnica, não para a prateleira." };
+      } else if (handle.getCarriedProduct()) {
+        result = { ok: false, message: "Você já está carregando um produto. Leve-o até o balcão." };
+      } else if ((state.products.get(customer.needsProduct)?.stock ?? 0) <= 0) {
+        result = { ok: false, message: "Não há estoque desse produto na prateleira." };
+      } else {
+        world.selectCustomer(customer.id);
+        handle.pickUpProduct(customer.needsProduct);
+        result = { ok: true, message: `Você pegou ${state.products.get(customer.needsProduct)?.name ?? "o produto"}. Vá ao balcão.` };
+      }
+    } else if (handle.getPlayerStation() === "balcao") {
+      if (!customer.needsProduct) {
+        result = { ok: false, message: "Este é um reparo: leve o cliente para a bancada técnica." };
+      } else if (handle.getCarriedProduct() !== customer.needsProduct) {
+        result = { ok: false, message: "Pegue o produto pedido nas prateleiras antes de fechar a venda." };
+      } else {
+        const product = state.products.get(customer.needsProduct);
+        const price = product ? Math.min(product.sellingPrice, customer.budget) : 0;
+        result = world.sellToCustomer(customer.id, price);
+        if (result.ok) handle.putDownProduct();
+      }
+    } else if (handle.getPlayerStation() === "bancada") {
+      if (!customer.needsService) {
+        result = { ok: false, message: "Este cliente quer comprar: pegue o item na prateleira." };
+      } else {
+        world.selectCustomer(customer.id);
+        result = world.acceptRepair(customer.id);
+      }
+    } else {
+      result = { ok: false, message: "Aproxime-se do balcão, das prateleiras ou da bancada para usar E." };
+    }
+
+    mapActionRef.current = result;
+    sincronizar();
+  }, [sincronizar]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -179,9 +239,21 @@ export default function GameCanvas() {
     };
   }, [sincronizar]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || event.key.toLowerCase() !== "e") return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
+      event.preventDefault();
+      interagirComEstacao();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [interagirComEstacao]);
+
   // ---- Ações da interface ligadas aos métodos públicos do GameWorld ----
 
   const iniciarTurno = useCallback(() => {
+    mapActionRef.current = null;
     chamarSemArgs(worldRef.current, "startShift");
     sincronizar();
   }, [sincronizar]);
@@ -201,7 +273,12 @@ export default function GameCanvas() {
       if (handleRef.current?.getPlayerStation() !== "balcao") {
         return { ok: false, message: "Vá até o balcão para concluir a venda." };
       }
+      const customer = world.getState().customers.get(id);
+      if (!customer?.needsProduct || handleRef.current.getCarriedProduct() !== customer.needsProduct) {
+        return { ok: false, message: "Pegue o produto pedido nas prateleiras antes de fechar a venda." };
+      }
       const resultado = world.sellToCustomer(id, preco);
+      if (resultado.ok) handleRef.current.putDownProduct();
       sincronizar();
       return resultado;
     },
@@ -300,6 +377,8 @@ export default function GameCanvas() {
           opportunities={instantaneo.opportunities}
           shiftReport={instantaneo.shiftReport}
           playerStation={instantaneo.playerStation}
+          carriedProductName={instantaneo.carriedProductName}
+          mapAction={instantaneo.mapAction}
           capacidades={capacidades}
           onStartShift={iniciarTurno}
           onSelectCustomer={selecionarCliente}

@@ -19,6 +19,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { GameWorld } from "./GameWorld";
+import type { ProductType } from "./types";
 
 export type PlayerStation = "balcao" | "prateleira" | "bancada" | "loja";
 
@@ -27,6 +28,9 @@ export interface GameHandle {
   world: GameWorld;
   /** Posição atual do atendente para a interface contextual. */
   getPlayerStation(): PlayerStation;
+  getCarriedProduct(): ProductType | undefined;
+  pickUpProduct(productType: ProductType): boolean;
+  putDownProduct(): void;
   /** Avança a simulação e a animação da cena. deltaSeconds em segundos reais. */
   update(deltaSeconds: number): void;
   dispose(): void;
@@ -94,6 +98,15 @@ export async function createGameScene(
     getPlayerStation() {
       return player.station();
     },
+    getCarriedProduct() {
+      return player.carriedProduct();
+    },
+    pickUpProduct(productType) {
+      return player.pickUpProduct(productType);
+    },
+    putDownProduct() {
+      player.putDownProduct();
+    },
     dispose() {
       player.dispose();
       scene.dispose();
@@ -150,6 +163,9 @@ function criarEstacao(scene: Scene, name: string, position: Vector3, size: Vecto
 function criarAtendente(scene: Scene): {
   update(deltaSeconds: number): void;
   station(): PlayerStation;
+  carriedProduct(): ProductType | undefined;
+  pickUpProduct(productType: ProductType): boolean;
+  putDownProduct(): void;
   dispose(): void;
 } {
   const root = new TransformNode("atendente", scene);
@@ -169,6 +185,16 @@ function criarAtendente(scene: Scene): {
   rosto.disableLighting = true;
   rosto.emissiveColor = MAGENTA;
   cabeca.material = rosto;
+
+  const caixa = CreateBox("atendente-caixa", { width: 1.35, height: 0.85, depth: 1.1 }, scene);
+  caixa.parent = root;
+  caixa.position = new Vector3(0, 2.15, 0.95);
+  const materialCaixa = new StandardMaterial("mat-atendente-caixa", scene);
+  materialCaixa.disableLighting = true;
+  materialCaixa.emissiveColor = LIMA;
+  caixa.material = materialCaixa;
+  caixa.setEnabled(false);
+  let produtoCarregado: ProductType | undefined;
 
   const pressed = new Set<string>();
   const onKeyDown = (event: KeyboardEvent) => {
@@ -201,6 +227,19 @@ function criarAtendente(scene: Scene): {
       if (Vector3.Distance(root.position, new Vector3(-11, 0, 15)) < 20) return "prateleira";
       if (Vector3.Distance(root.position, new Vector3(26, 0, 9)) < 7) return "bancada";
       return "loja";
+    },
+    carriedProduct() {
+      return produtoCarregado;
+    },
+    pickUpProduct(productType) {
+      if (produtoCarregado) return false;
+      produtoCarregado = productType;
+      caixa.setEnabled(true);
+      return true;
+    },
+    putDownProduct() {
+      produtoCarregado = undefined;
+      caixa.setEnabled(false);
     },
     dispose() {
       window.removeEventListener("keydown", onKeyDown);

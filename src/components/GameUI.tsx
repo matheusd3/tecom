@@ -31,6 +31,8 @@ interface GameUIProps {
   opportunities: Opportunity[];
   shiftReport: ShiftReport | null;
   playerStation: PlayerStation;
+  carriedProductName?: string;
+  mapAction: ActionResult | null;
   capacidades: Capacidades;
   onStartShift: () => void;
   onSelectCustomer: (id: string) => void;
@@ -177,6 +179,11 @@ export function GameUI(props: GameUIProps) {
     const t = window.setTimeout(() => setAviso(null), 2600);
     return () => window.clearTimeout(t);
   }, [aviso]);
+
+  useEffect(() => {
+    if (!props.mapAction) return;
+    setAviso({ texto: props.mapAction.message, tipo: props.mapAction.ok ? "ok" : "erro" });
+  }, [props.mapAction]);
 
   useEffect(() => {
     if (!confirmarReinicio) return;
@@ -420,7 +427,11 @@ export function GameUI(props: GameUIProps) {
       {emTurno && (
         <div className="controle-personagem" aria-live="polite">
           <strong>Você está {localDoAtendente[props.playerStation]}</strong>
-          <span>WASD / setas para andar · vendas no balcão · reparos na bancada</span>
+          <span>
+            {props.carriedProductName
+              ? `Carregando ${props.carriedProductName} · leve ao balcão e aperte E`
+              : "WASD / setas para andar · E para interagir"}
+          </span>
         </div>
       )}
 
