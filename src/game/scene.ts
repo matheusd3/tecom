@@ -45,6 +45,7 @@ export interface GameHandle {
   pickUpProduct(productType: ProductType): boolean;
   pickUpRepair(customerId: string): boolean;
   putDownProduct(): void;
+  setMobileMovement(x: number, z: number): void;
   dispose(): void;
 }
 
@@ -177,6 +178,10 @@ export async function createGameScene(
       produtoCarregado = undefined;
       reparoCarregado = undefined;
       jogador.definirCarga(null);
+    },
+
+    setMobileMovement(x, z) {
+      jogador.definirMovimentoToque(x, z);
     },
 
     dispose() {

@@ -25,6 +25,8 @@ export interface Jogador {
   estacao: Estacao | null;
   carga: TipoCarga | null;
   atualizar(deltaSeconds: number): void;
+  /** Direção vinda dos controles de toque, entre -1 e 1 em cada eixo. */
+  definirMovimentoToque(x: number, z: number): void;
   definirCarga(tipo: TipoCarga | null, hex?: string): void;
   dispose(): void;
 }
@@ -69,6 +71,7 @@ export function criarJogador(
   personagem.raiz.rotation.y = Math.PI; // começa de frente para o balcão
 
   const pressionadas = new Set<string>();
+  let movimentoToque = { x: 0, z: 0 };
   let estacaoAtual: Estacao | null = estacaoEm(posicao);
   let cargaAtual: TipoCarga | null = null;
 
@@ -106,6 +109,8 @@ export function criarJogador(
         dx += direcao.x;
         dz += direcao.z;
       }
+      dx += movimentoToque.x;
+      dz += movimentoToque.z;
 
       const magnitude = Math.hypot(dx, dz);
       let velocidade = 0;
@@ -141,10 +146,20 @@ export function criarJogador(
       personagem.definirCarga(tipo, hex);
     },
 
+    definirMovimentoToque(x, z) {
+      // O botão pode receber eventos duplicados no celular; limitar os valores
+      // mantém a velocidade do personagem igual à do teclado.
+      movimentoToque = {
+        x: Math.max(-1, Math.min(1, x)),
+        z: Math.max(-1, Math.min(1, z)),
+      };
+    },
+
     dispose() {
       window.removeEventListener("keydown", aoPressionar);
       window.removeEventListener("keyup", aoSoltar);
       window.removeEventListener("blur", aoPerderFoco);
+      movimentoToque = { x: 0, z: 0 };
       personagem.dispose();
     },
   };

@@ -1432,4 +1432,188 @@ button {
     left: 10px;
     right: 10px;
   }
+
+  .controles-toque {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: calc(34% + 12px);
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    pointer-events: none;
+    z-index: 3;
+  }
+
+  .direcional,
+  .botao-interagir {
+    pointer-events: auto;
+  }
+
+  .direcional {
+    position: relative;
+    width: 132px;
+    height: 132px;
+  }
+
+  .direcional__botao,
+  .botao-interagir {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+    user-select: none;
+    border: 1px solid rgba(0, 229, 255, 0.6);
+    background: rgba(5, 15, 21, 0.84);
+    color: var(--ciano);
+    box-shadow: 0 0 18px rgba(0, 229, 255, 0.18);
+    font-family: Orbitron, monospace;
+    font-weight: 700;
+  }
+
+  .direcional__botao {
+    position: absolute;
+    width: 43px;
+    height: 43px;
+    border-radius: 12px;
+    font-size: 17px;
+  }
+
+  .direcional__cima { top: 0; left: 44px; }
+  .direcional__esquerda { top: 44px; left: 0; }
+  .direcional__direita { top: 44px; right: 0; }
+  .direcional__baixo { bottom: 0; left: 44px; }
+
+  .direcional__botao:active,
+  .botao-interagir:active {
+    background: var(--ciano);
+    color: #04141a;
+  }
+
+  .botao-interagir {
+    min-height: 57px;
+    padding: 0 16px;
+    border-radius: 50%;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+}
+
+@media (min-width: 821px) {
+  .controles-toque {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  :root {
+    --altura-topo: 54px;
+    --altura-faixa: 24px;
+  }
+
+  body {
+    font-size: 13px;
+  }
+
+  .topbar {
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .marca__selo {
+    width: 31px;
+    height: 31px;
+    border-radius: 8px;
+  }
+
+  .marca__titulo {
+    font-size: 12px;
+    letter-spacing: 0.7px;
+  }
+
+  .marca__relogio,
+  .controle-musica,
+  .controles-jogo__grupo {
+    display: none;
+  }
+
+  .cronometro__valor {
+    font-size: 20px;
+  }
+
+  .cronometro__rotulo {
+    font-size: 8px;
+  }
+
+  .faixa-meta {
+    padding: 0 8px;
+    gap: 6px;
+  }
+
+  .faixa-meta__texto {
+    max-width: 52%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 9px;
+  }
+
+  .painel {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .painel--direita {
+    height: 22%;
+  }
+
+  .painel--esquerda {
+    height: 32%;
+  }
+
+  .palco {
+    top: calc(var(--topo-total) + 22%);
+    bottom: 32%;
+    padding: 7px;
+  }
+
+  .palco__card {
+    width: min(310px, 88%);
+    padding: 11px;
+  }
+
+  .controles-jogo {
+    top: calc(var(--topo-total) + 22% + 5px);
+    left: 7px;
+  }
+
+  .estacao-chip {
+    font-size: 9px;
+  }
+
+  .controles-toque {
+    bottom: calc(32% + 7px);
+    left: 8px;
+    right: 8px;
+  }
+
+  .direcional {
+    width: 110px;
+    height: 110px;
+  }
+
+  .direcional__botao {
+    width: 37px;
+    height: 37px;
+    border-radius: 10px;
+    font-size: 14px;
+  }
+
+  .direcional__cima { left: 37px; }
+  .direcional__esquerda { top: 37px; }
+  .direcional__direita { top: 37px; }
+  .direcional__baixo { left: 37px; }
+
+  .botao-interagir {
+    min-height: 52px;
+    padding: 0 12px;
+    font-size: 9px;
+  }
 }

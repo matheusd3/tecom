@@ -503,6 +503,10 @@ export default function GameCanvas() {
     sincronizar();
   }, [sincronizar]);
 
+  const moverNoCelular = useCallback((x: number, z: number) => {
+    handleRef.current?.setMobileMovement(x, z);
+  }, []);
+
   const mudarVelocidade = useCallback(
     (velocidade: number) => {
       worldRef.current?.setTimeSpeed(velocidade);
@@ -587,6 +591,8 @@ export default function GameCanvas() {
           onHire={contratar}
           onClearOpportunities={limparOportunidades}
           onReset={reiniciar}
+          onMobileMove={moverNoCelular}
+          onMobileInteract={interagirComEstacao}
         />
       )}
     </>

@@ -71,6 +71,8 @@ interface GameUIProps {
   onHire: (funcao: EmployeeRole, nome: string) => boolean;
   onClearOpportunities: () => void;
   onReset: () => void;
+  onMobileMove: (x: number, z: number) => void;
+  onMobileInteract: () => void;
 }
 
 type AbaLateral = "estoque" | "equipe" | "consultor";
@@ -510,6 +512,22 @@ export function GameUI(props: GameUIProps) {
               : "leve ao balcão"}
           </span>
         )}
+      </div>
+
+      {/* Controles exibidos apenas em telas de toque. O teclado continua
+          funcionando normalmente em computadores. */}
+      <div className="controles-toque" aria-label="Controles do jogo">
+        <div className="direcional" aria-label="Mover personagem">
+          <button className="direcional__botao direcional__cima" aria-label="Andar para frente"
+            onPointerDown={() => props.onMobileMove(0, 1)} onPointerUp={() => props.onMobileMove(0, 0)} onPointerLeave={() => props.onMobileMove(0, 0)} onPointerCancel={() => props.onMobileMove(0, 0)}>▲</button>
+          <button className="direcional__botao direcional__esquerda" aria-label="Andar para a esquerda"
+            onPointerDown={() => props.onMobileMove(-1, 0)} onPointerUp={() => props.onMobileMove(0, 0)} onPointerLeave={() => props.onMobileMove(0, 0)} onPointerCancel={() => props.onMobileMove(0, 0)}>◀</button>
+          <button className="direcional__botao direcional__direita" aria-label="Andar para a direita"
+            onPointerDown={() => props.onMobileMove(1, 0)} onPointerUp={() => props.onMobileMove(0, 0)} onPointerLeave={() => props.onMobileMove(0, 0)} onPointerCancel={() => props.onMobileMove(0, 0)}>▶</button>
+          <button className="direcional__botao direcional__baixo" aria-label="Andar para trás"
+            onPointerDown={() => props.onMobileMove(0, -1)} onPointerUp={() => props.onMobileMove(0, 0)} onPointerLeave={() => props.onMobileMove(0, 0)} onPointerCancel={() => props.onMobileMove(0, 0)}>▼</button>
+        </div>
+        <button className="botao-interagir" onClick={props.onMobileInteract}>INTERAGIR</button>
       </div>
 
       {/* ---------- Palco central ---------- */}
