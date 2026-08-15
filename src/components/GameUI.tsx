@@ -5,6 +5,7 @@
 // só lê o estado publicado pelo GameWorld e chama os métodos dele.
 
 import { useEffect, useState } from "react";
+import type { Estacao } from "@/game/scene";
 import type {
   ActionResult,
   Customer,
@@ -30,6 +31,8 @@ interface GameUIProps {
   opportunities: Opportunity[];
   shiftReport: ShiftReport | null;
   capacidades: Capacidades;
+  /** Onde o atendente está parado na loja 3D. */
+  estacao: Estacao | null;
   onStartShift: () => void;
   onSelectCustomer: (id: string) => void;
   onSell: (id: string, preco: number) => ActionResult;
@@ -73,6 +76,18 @@ const URGENCIA: Record<Customer["urgency"], string> = {
   low: "tranquilo",
   medium: "com pressa",
   high: "urgente",
+};
+
+const ROTULO_ESTACAO: Record<Estacao, string> = {
+  balcao: "no balcão",
+  estoque: "no estoque",
+  assistencia: "na assistência",
+};
+
+/** Chegar numa estação abre o painel que serve para agir ali. */
+const ABA_DA_ESTACAO: Partial<Record<Estacao, AbaLateral>> = {
+  estoque: "estoque",
+  assistencia: "equipe",
 };
 
 // A função aparece logo abaixo do nome no painel, então o nome gerado não
@@ -150,7 +165,7 @@ function Icone({ d }: { d: string }) {
 }
 
 export function GameUI(props: GameUIProps) {
-  const { gameState, opportunities, shiftReport, capacidades } = props;
+  const { gameState, opportunities, shiftReport, capacidades, estacao } = props;
 
   const [aba, setAba] = useState<AbaLateral>("estoque");
   const [lote, setLote] = useState(5);
@@ -169,6 +184,11 @@ export function GameUI(props: GameUIProps) {
   useEffect(() => {
     setResumoFechado(false);
   }, [diaDoRelatorio]);
+
+  useEffect(() => {
+    const alvo = estacao ? ABA_DA_ESTACAO[estacao] : undefined;
+    if (alvo) setAba(alvo);
+  }, [estacao]);
 
   useEffect(() => {
     if (!aviso) return;
@@ -406,6 +426,24 @@ export function GameUI(props: GameUIProps) {
           {meta > 0
             ? `Receita do turno ${formatarMoeda(receitaDoTurno)} de ${formatarMoeda(meta)}`
             : "Meta do dia ainda não definida pelo núcleo"}
+        </span>
+      </div>
+
+      {/* ---------- Controles da loja 3D ---------- */}
+      <div className="controles-jogo">
+        <span className="controles-jogo__grupo">
+          <span className="tecla">W</span>
+          <span className="tecla">A</span>
+          <span className="tecla">S</span>
+          <span className="tecla">D</span>
+          andar
+        </span>
+        <span className="controles-jogo__grupo">
+          <span className="tecla">E</span>
+          interagir
+        </span>
+        <span className={`estacao-chip estacao-chip--${estacao ?? "livre"}`}>
+          {estacao ? ROTULO_ESTACAO[estacao] : "andando pela loja"}
         </span>
       </div>
 

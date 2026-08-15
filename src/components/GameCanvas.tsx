@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Engine } from "@babylonjs/core/Engines/engine";
-import { createGameScene, type GameHandle } from "@/game/scene";
+import { createGameScene, type Estacao, type GameHandle } from "@/game/scene";
 import type { GameWorld } from "@/game/GameWorld";
 import type {
   ActionResult,
@@ -88,6 +88,8 @@ export default function GameCanvas() {
     relatorio: false,
   });
   const [erro, setErro] = useState<string | null>(null);
+  /** Estação onde o atendente está parado na loja 3D. */
+  const [estacao, setEstacao] = useState<Estacao | null>(null);
 
   /** Copia o estado atual da simulação para o React. */
   const sincronizar = useCallback(() => {
@@ -136,6 +138,24 @@ export default function GameCanvas() {
         }
         handle = h;
         worldRef.current = h.world;
+        // Só em desenvolvimento: dá acesso à cena pelo console para inspecionar
+        // posição do atendente, colisão e estado do turno sem instrumentar o jogo.
+        if (import.meta.env.DEV) {
+          (window as unknown as Record<string, unknown>).__jogo = h;
+        }
+        h.aoMudarEstacao(setEstacao);
+        h.aoInteragir((estacaoAtual) => {
+          // Chegar ao balcão chama o próximo da fila: a mesma seleção que o
+          // painel da direita faz, agora pelo posicionamento do atendente.
+          if (estacaoAtual !== "balcao") return;
+          const proximo = Array.from(h.world.getState().customers.values())
+            .filter((cliente) => cliente.status === "waiting")
+            .sort((a, b) => a.arrivalTime - b.arrivalTime)[0];
+          if (proximo) {
+            chamarComId(h.world, "selectCustomer", proximo.id);
+            sincronizar();
+          }
+        });
         setCapacidades({
           iniciarTurno: temMetodo(h.world, "startShift"),
           selecionarCliente: temMetodo(h.world, "selectCustomer"),
@@ -288,6 +308,7 @@ export default function GameCanvas() {
           opportunities={instantaneo.opportunities}
           shiftReport={instantaneo.shiftReport}
           capacidades={capacidades}
+          estacao={estacao}
           onStartShift={iniciarTurno}
           onSelectCustomer={selecionarCliente}
           onSell={vender}
