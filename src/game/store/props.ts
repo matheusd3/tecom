@@ -154,6 +154,7 @@ export function construirLoja(scene: Scene): Loja {
   balcao(scene, mats, letreiros);
   bancadaTecnica(scene, mats, letreiros);
   estoque(scene, mats, letreiros);
+  bebedouro(scene, mats, letreiros);
   decoracao(scene, mats);
   const pilhas = pilhasDeReparo(scene);
 
@@ -171,6 +172,22 @@ export function construirLoja(scene: Scene): Loja {
       }
     },
   };
+}
+
+/** Baixo e compacto: fica no salão sem bloquear o piso para a câmera fixa. */
+function bebedouro(scene: Scene, mats: Materiais, letreiros: Map<Estacao, StandardMaterial>): void {
+  const r = MOVEIS.bebedouro;
+  const c = centro(r);
+  blocoDoRetangulo(scene, "bebedouro-base", r, 0.82, 0, mats.branco, 0.08);
+  const galao = CreateCylinder("bebedouro-galao", { diameter: 0.48, height: 0.45 }, scene);
+  galao.position.set(c.x, 1.045, c.z);
+  galao.material = mats.vidro;
+  galao.freezeWorldMatrix();
+  const torneira = CreateBox("bebedouro-torneira", { width: 0.16, height: 0.12, depth: 0.16 }, scene);
+  torneira.position.set(c.x, 0.7, r.minZ - 0.05);
+  torneira.material = mats.neonCiano;
+  torneira.freezeWorldMatrix();
+  letreiros.set("bebedouro", mats.neonCiano);
 }
 
 // ------------------------------------------------------------------ piso

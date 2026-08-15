@@ -47,9 +47,11 @@ export interface GameHandle {
   getCarriedRepairCustomerId(): string | undefined;
   /** Caixa de reposição vinda do almoxarifado (não é venda, é abastecimento). */
   getCarriedRestock(): ProductType | undefined;
+  getCarriedGallon(): boolean;
   pickUpProduct(productType: ProductType): boolean;
   pickUpRepair(customerId: string): boolean;
   pickUpRestock(productType: ProductType): boolean;
+  pickUpGallon(): boolean;
   putDownProduct(): void;
   setMobileMovement(x: number, z: number): void;
   dispose(): void;
@@ -152,9 +154,10 @@ export async function createGameScene(
   let produtoCarregado: ProductType | undefined;
   let reparoCarregado: string | undefined;
   let caixaCarregada: ProductType | undefined;
+  let galaoCarregado = false;
   let vendasVistas = 0;
   let reparosVistos = 0;
-  const maoOcupada = () => !!produtoCarregado || !!reparoCarregado || !!caixaCarregada;
+  const maoOcupada = () => !!produtoCarregado || !!reparoCarregado || !!caixaCarregada || galaoCarregado;
 
   loja.destacarZona(jogador.estacao);
 
@@ -201,6 +204,7 @@ export async function createGameScene(
     getCarriedRestock() {
       return caixaCarregada;
     },
+    getCarriedGallon() { return galaoCarregado; },
 
     pickUpProduct(productType) {
       if (maoOcupada()) return false;
@@ -224,11 +228,18 @@ export async function createGameScene(
       jogador.definirCarga("caixa", "#c79a63");
       return true;
     },
+    pickUpGallon() {
+      if (maoOcupada()) return false;
+      galaoCarregado = true;
+      jogador.definirCarga("galao", "#7ad6ff");
+      return true;
+    },
 
     putDownProduct() {
       produtoCarregado = undefined;
       reparoCarregado = undefined;
       caixaCarregada = undefined;
+      galaoCarregado = false;
       jogador.definirCarga(null);
     },
 

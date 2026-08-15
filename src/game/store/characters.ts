@@ -20,7 +20,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 
 import { PALETA, cor, fosco, materialIcone, neon } from "./materials";
 
-export type TipoCarga = "produto" | "aparelho" | "caixa";
+export type TipoCarga = "produto" | "aparelho" | "caixa" | "galao";
 export type TipoPedido = "produto" | "reparo" | "feliz" | "bravo";
 
 export interface OpcoesPersonagem {
@@ -354,7 +354,7 @@ function montar(
       matCarga.diffuseColor = cor(corItem);
       matCarga.emissiveColor = cor(corItem).scale(0.4);
       // Aparelho em manutenção é achatado como um notebook fechado.
-      carga.scaling.set(1, tipo === "aparelho" ? 0.45 : 1, tipo === "aparelho" ? 1.35 : 1);
+      carga.scaling.set(tipo === "galao" ? 0.7 : 1, tipo === "aparelho" ? 0.45 : tipo === "galao" ? 1.3 : 1, tipo === "aparelho" ? 1.35 : tipo === "galao" ? 0.7 : 1);
     },
 
     definirPedido(tipo) {

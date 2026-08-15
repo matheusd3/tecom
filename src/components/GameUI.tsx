@@ -122,6 +122,7 @@ const ROTULO_ESTACAO: Record<PlayerStation, string> = {
   prateleira: "nas prateleiras",
   almoxarifado: "no almoxarifado",
   assistencia: "na bancada técnica",
+  bebedouro: "no bebedouro",
   loja: "andando pela loja",
 };
 
@@ -130,6 +131,7 @@ const ABA_DA_ESTACAO: Partial<Record<PlayerStation, AbaLateral>> = {
   prateleira: "estoque",
   almoxarifado: "estoque",
   assistencia: "equipe",
+  bebedouro: "equipe",
 };
 
 // A função aparece logo abaixo do nome no painel, então o nome gerado não

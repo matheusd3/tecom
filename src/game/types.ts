@@ -7,7 +7,7 @@ export type CustomerStatus = "waiting" | "beingServed" | "repairing" | "leaving"
 export type GamePhase = "planning" | "active" | "summary";
 export type ShiftEventType = "influencer" | "couponLeak" | "powerSurge";
 export type RepairStatus = "queued" | "inProgress" | "ready" | "returning" | "completed";
-export type UpgradeId = "segundoBalcao" | "bancadaRapida" | "carrinho" | "prateleiraGrande" | "letreiroRua" | "cafeDaEspera";
+export type UpgradeId = "segundoBalcao" | "bancadaRapida" | "carrinho" | "prateleiraGrande" | "letreiroRua" | "cafeDaEspera" | "bebedouroAutomatico";
 
 export interface Upgrade {
   id: UpgradeId;
@@ -138,6 +138,8 @@ export interface GameState {
   shiftProfit: number;
   activeEvent?: ShiftEvent;
   selectedCustomerId?: string;
+  /** Instante da prioridade manual; auxiliares podem assumir após a reserva expirar. */
+  selectedCustomerAt?: number;
   cash: number;
   totalRevenue: number;
   totalExpenses: number;
@@ -160,6 +162,7 @@ export interface GameState {
   employeeHappinessAvg: number;
   upgrades: UpgradeId[];
   upgradesOferecidos: UpgradeId[];
+  nivelDoBebedouro: number;
 }
 
 export interface Opportunity {

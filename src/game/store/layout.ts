@@ -24,7 +24,7 @@ export interface Ponto {
  * venda; "almoxarifado" é a sala dos fundos, onde a compra chega e de onde se
  * repõe a prateleira.
  */
-export type Estacao = "balcao" | "prateleira" | "assistencia" | "almoxarifado";
+export type Estacao = "balcao" | "prateleira" | "assistencia" | "almoxarifado" | "bebedouro";
 
 // A loja é propositalmente mais funda do que larga: os painéis da interface
 // ocupam as laterais da tela, então o que sobra para a cena é uma janela alta.
@@ -72,6 +72,8 @@ export const MOVEIS = {
   caixasEntrega: { minX: 9.4, maxX: 11, minZ: 0.4, maxZ: 2.6 } as Retangulo,
   /** Cantinho de espera (pufes e mesinha) no meio do salão. */
   esperaClientes: { minX: 6, maxX: 8.8, minZ: 0.5, maxZ: 2.6 } as Retangulo,
+  /** Baixo (1,25 m) para não ocultar o piso atrás dele nesta câmera fixa. */
+  bebedouro: { minX: 9.1, maxX: 10, minZ: 3.5, maxZ: 4.3 } as Retangulo,
   plantaEsquerda: { minX: -11, maxX: -9.6, minZ: -11.5, maxZ: -10.1 } as Retangulo,
   plantaDireita: { minX: 9.6, maxX: 11, minZ: -11.5, maxZ: -10.1 } as Retangulo,
 };
@@ -119,6 +121,7 @@ const ESTACOES: Array<{ id: Estacao; rotulo: string; moveis: Retangulo[] }> = [
   },
   { id: "assistencia", rotulo: "Assistência técnica", moveis: [MOVEIS.bancada] },
   { id: "almoxarifado", rotulo: "Almoxarifado", moveis: [MOVEIS.estanteAlmoxarifado] },
+  { id: "bebedouro", rotulo: "Bebedouro", moveis: [MOVEIS.bebedouro] },
 ];
 
 // ---------------------------------------------------------------- pessoas

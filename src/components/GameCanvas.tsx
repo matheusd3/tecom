@@ -143,6 +143,7 @@ export default function GameCanvas() {
     const carriedRepairCustomerId = handle.getCarriedRepairCustomerId();
     const carriedProduct = handle.getCarriedProduct();
     const carriedRestock = handle.getCarriedRestock();
+    const carriedGallon = handle.getCarriedGallon();
     // A fila é a ordem de chegada; o cliente priorizado no painel vem antes.
     const aguardando = Array.from(state.customers.values()).filter(
       (item) => item.status === "waiting"
@@ -167,7 +168,10 @@ export default function GameCanvas() {
 
     // A bancada não depende da fila: lá dentro há reparo pronto para retirar,
     // aparelho para entregar ao técnico e conserto para ajudar a terminar.
-    if (station === "assistencia") {
+    if (station === "bebedouro") {
+      if (!carriedGallon) result = { ok: false, message: "Pegue um galão cheio no almoxarifado." };
+      else { result = world.abastecerBebedouro(); if (result.ok) handle.putDownProduct(); }
+    } else if (station === "assistencia") {
       if (carriedRepairCustomerId) {
         result = world.acceptRepair(carriedRepairCustomerId);
         if (result.ok) handle.putDownProduct();
@@ -181,6 +185,8 @@ export default function GameCanvas() {
       // Sala dos fundos: aqui só se pega caixa para abastecer a prateleira.
       if (carriedRepairCustomerId) {
         result = { ok: false, message: "Aparelho de cliente não fica no almoxarifado: leve-o à bancada." };
+      } else if (carriedGallon) {
+        handle.putDownProduct(); result = { ok: true, message: "Galão devolvido à estante." };
       } else if (carriedRestock) {
         handle.putDownProduct();
         result = { ok: true, message: "Caixa devolvida à estante." };
@@ -208,9 +214,12 @@ export default function GameCanvas() {
       } else if (carriedRestock) {
         result = world.restockShelf(carriedRestock);
         if (result.ok) handle.putDownProduct();
+      } else if (state.nivelDoBebedouro < 8) {
+        handle.pickUpGallon(); result = { ok: true, message: "Galão cheio nas mãos. Leve-o ao bebedouro." };
       } else {
         const nome = carriedProduct ? state.products.get(carriedProduct)?.name : undefined;
         handle.putDownProduct();
+        world.clearSelectedCustomer();
         result = { ok: true, message: `${nome ?? "Produto"} devolvido à prateleira.` };
       }
     } else if (!customer) {

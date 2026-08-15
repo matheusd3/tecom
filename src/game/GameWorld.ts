@@ -28,8 +28,12 @@ const CATALOGO_MELHORIAS: Upgrade[] = [
   { id: "prateleiraGrande", nome: "Prateleira dupla", descricao: "A exposição por produto passa a 20 unidades.", custo: 2200, requer: [] },
   { id: "letreiroRua", nome: "Letreiro para a rua", descricao: "Clientes chegam mais rápido.", custo: 2500, requer: [] },
   { id: "cafeDaEspera", nome: "Café na espera", descricao: "Clientes perdem paciência 25% mais devagar.", custo: 1500, requer: [] },
+  { id: "bebedouroAutomatico", nome: "Bebedouro automático", descricao: "Troca o galão vazio sozinho.", custo: 2000, requer: [] },
 ];
 const SHIFT_DURATION = 120;
+const RESERVA_CLIENTE_SECONDS = 10;
+const GOLES_BEBEDOURO = 8;
+const INTERVALO_BEBEDOURO = 25;
 /**
  * Tempo que o cliente leva da porta até o balcão. Ninguém pode ser atendido
  * antes de chegar: sem isso o atendente auxiliar fechava a venda enquanto o
@@ -77,6 +81,7 @@ export class GameWorld {
   private supportRotation = 0;
   private shiftHighlights: string[] = [];
   private supportAttendantTimer = 0;
+  private nextDrinkAt = new Map<string, number>();
 
   constructor() {
     this.state = this.createInitialState();
@@ -92,6 +97,7 @@ export class GameWorld {
     this.updateWaitingCustomers(elapsed);
     this.generateCustomers(elapsed);
     this.processRepairs();
+    this.processarBebedouro();
     this.runSupportAttendant(elapsed);
     this.removeDepartedCustomers();
     // Desconto pendente morre com o cliente que o motivou.
@@ -182,7 +188,19 @@ export class GameWorld {
     const customer = this.state.customers.get(customerId);
     if (!customer || customer.status !== "waiting") return { ok: false, message: "Cliente não está mais na fila." };
     this.state.selectedCustomerId = customerId;
+    this.state.selectedCustomerAt = this.state.time;
     return { ok: true, message: `${customer.name} foi priorizado.` };
+  }
+
+  public clearSelectedCustomer(): void {
+    this.state.selectedCustomerId = undefined;
+    this.state.selectedCustomerAt = undefined;
+  }
+
+  public abastecerBebedouro(): ActionResult {
+    if (this.temUpgrade("bebedouroAutomatico")) return { ok: false, message: "O bebedouro automático já cuida do galão." };
+    this.state.nivelDoBebedouro = GOLES_BEBEDOURO;
+    return { ok: true, message: "Galão trocado: o bebedouro está cheio." };
   }
 
   public getShiftReport(): ShiftReport | null {
@@ -316,7 +334,7 @@ export class GameWorld {
     if (price < product.costPrice) return { ok: false, message: "Essa oferta fica abaixo do custo." };
     if (price > customer.budget) return { ok: false, message: "O cliente não aceita esse valor." };
 
-    const serviceDuration = Math.max(3, 10 - seller.skill / 15);
+    const serviceDuration = this.duracaoDoFuncionario(seller, Math.max(3, 10 - seller.skill / 15));
     seller.isBusy = true;
     seller.busyUntil = this.state.time + serviceDuration;
     product.stock--;
@@ -331,7 +349,7 @@ export class GameWorld {
     customer.satisfaction = Math.min(100, 72 + seller.skill / 4 + (price < product.sellingPrice ? 8 : 0));
     customer.status = "leaving";
     customer.departureTime = this.state.time + 2;
-    seller.happiness = Math.min(100, seller.happiness + 1);
+    if (!sellerId) this.cansar(seller);
     const bonus = this.applyCustomerTrait(customer, "sale");
     return { ok: true, message: `Venda fechada por R$ ${price.toFixed(2).replace(".", ",")}.${bonus}` };
   }
@@ -348,7 +366,7 @@ export class GameWorld {
     customer.status = "beingServed";
     // Depois de receber o aparelho, ele deixa a fila. A próxima interação deve
     // mirar um cliente que ainda aguarda, não o reparo que já está em trânsito.
-    this.state.selectedCustomerId = undefined;
+    this.clearSelectedCustomer();
     return { ok: true, message: "Aparelho recebido. Leve-o à bancada técnica." };
   }
 
@@ -363,7 +381,7 @@ export class GameWorld {
     const price = 180 + skill * 1.5;
     const cost = price * 0.2;
     const surgeDelay = this.state.activeEvent?.type === "powerSurge" && this.consumeEventUse("powerSurge") ? 18 : 0;
-    const duration = this.duracaoReparo(Math.max(18, 58 - skill * 0.3) + surgeDelay);
+    const duration = this.duracaoReparo(this.duracaoDoFuncionario(technician, Math.max(18, 58 - skill * 0.3) + surgeDelay));
     const repair: RepairOrder = {
       id: `repair-${Math.floor(this.state.time * 1000)}`, customerId: customer.id,
       serviceType: customer.needsService, technicianId: technician?.id, startTime: this.state.time,
@@ -516,6 +534,7 @@ export class GameWorld {
       missedSales: 0, missedRepairs: 0, idleEmployeeTime: 0,
       customerSatisfactionAvg: 80, employeeHappinessAvg: 79,
       upgrades: [], upgradesOferecidos: [],
+      nivelDoBebedouro: GOLES_BEBEDOURO,
     };
   }
 
@@ -571,14 +590,14 @@ export class GameWorld {
       const technician = repair.technicianId ? this.state.employees.get(repair.technicianId) : undefined;
       if (technician) {
         technician.isBusy = false;
-        technician.happiness = Math.min(100, technician.happiness + 2);
+        this.cansar(technician);
       }
       this.addHighlight("Um aparelho ficou pronto na bancada; devolva-o no balcão para receber.");
     }
     for (const repair of this.state.repairs.filter((item) => item.status === "queued")) {
       const technician = this.availableEmployee("technician");
       if (!technician) break;
-      const duration = this.duracaoReparo(Math.max(18, 58 - technician.skill * 0.3));
+      const duration = this.duracaoReparo(this.duracaoDoFuncionario(technician, Math.max(18, 58 - technician.skill * 0.3)));
       this.startRepair(repair, technician, duration);
     }
   }
@@ -622,26 +641,31 @@ export class GameWorld {
       ...auxiliares.slice(this.supportRotation),
       ...auxiliares.slice(0, this.supportRotation),
     ];
+    const alvosTomados = new Set<string>();
     for (const helper of ordem) {
-      if (helper.isBusy) continue;
-      this.darTarefaAoAuxiliar(helper);
+      if (helper.isBusy || helper.happiness < 20) continue;
+      this.darTarefaAoAuxiliar(helper, alvosTomados);
     }
   }
 
   /** Uma tarefa para um auxiliar livre. Devolve false se não havia o que fazer. */
-  private darTarefaAoAuxiliar(helper: Employee): boolean {
+  private darTarefaAoAuxiliar(helper: Employee, alvosTomados: Set<string>): boolean {
     const ocupar = (tarefa: string, tipo: NonNullable<Employee["currentTask"]>) => {
       helper.isBusy = true;
-      helper.busyUntil = this.state.time + 4;
+      helper.busyUntil = this.state.time + this.duracaoDoFuncionario(helper, 4);
       helper.currentTask = tipo;
       this.state.supportTask = tarefa;
       this.state.supportTaskKind = tipo;
     };
 
+    const reservaAtiva = (customer: Customer) =>
+      customer.id === this.state.selectedCustomerId &&
+      this.state.time - (this.state.selectedCustomerAt ?? -Infinity) < RESERVA_CLIENTE_SECONDS;
     const atendivel = (customer: Customer) =>
       customer.status === "waiting" &&
       this.chegouAoBalcao(customer) &&
-      customer.id !== this.state.selectedCustomerId;
+      !reservaAtiva(customer) &&
+      !alvosTomados.has(`cliente:${customer.id}`);
 
     const vendaDireta = Array.from(this.state.customers.values()).find((customer) => {
       if (!atendivel(customer) || !customer.needsProduct) return false;
@@ -652,6 +676,7 @@ export class GameWorld {
       const product = this.state.products.get(vendaDireta.needsProduct)!;
       const resultado = this.sellToCustomer(vendaDireta.id, product.sellingPrice, helper.id);
       if (resultado.ok) {
+        alvosTomados.add(`cliente:${vendaDireta.id}`);
         ocupar(`${helper.name} vendeu ${product.name} no balcão.`, "venda");
         return true;
       }
@@ -676,6 +701,7 @@ export class GameWorld {
           customerPrice: precisaAval.budget,
           askedBy: helper.name,
         };
+        alvosTomados.add(`cliente:${precisaAval.id}`);
         this.state.supportTask = `${helper.name} pediu aprovação de desconto em ${product.name}.`;
         this.state.supportTaskKind = undefined;
         return true;
@@ -686,15 +712,17 @@ export class GameWorld {
       (customer) => atendivel(customer) && customer.needsService
     );
     if (waitingRepair) {
+      alvosTomados.add(`cliente:${waitingRepair.id}`);
       this.receiveRepair(waitingRepair.id);
       this.acceptRepair(waitingRepair.id);
       ocupar(`${helper.name} levou um aparelho para a assistência.`, "levarReparo");
       return true;
     }
     const readyRepair = this.state.repairs.find(
-      (repair) => repair.status === "ready" && !this.reparoJaEmMaos(repair.customerId)
+      (repair) => repair.status === "ready" && !this.reparoJaEmMaos(repair.customerId) && !alvosTomados.has(`reparo:${repair.id}`)
     );
     if (readyRepair) {
+      alvosTomados.add(`reparo:${readyRepair.id}`);
       this.collectCompletedRepair(readyRepair.customerId);
       this.returnRepairToCustomer(readyRepair.customerId);
       ocupar(`${helper.name} devolveu um reparo pronto ao balcão.`, "trazerReparo");
@@ -703,10 +731,13 @@ export class GameWorld {
 
     // Sem cliente para atender, o auxiliar abastece a prateleira. É a tarefa de
     // menor prioridade: atender vem antes de arrumar.
-    const paraRepor = this.produtoParaRepor();
+    const paraRepor = Array.from(this.state.products.values())
+      .filter((product) => product.storage > 0 && product.stock < 6 && !alvosTomados.has(`produto:${product.type}`))
+      .sort((a, b) => a.stock - b.stock || b.demand - a.demand)[0]?.type;
     if (paraRepor && (this.state.products.get(paraRepor)?.stock ?? 0) < 6) {
       const resultado = this.restockShelf(paraRepor);
       if (resultado.ok) {
+        alvosTomados.add(`produto:${paraRepor}`);
         const nome = this.state.products.get(paraRepor)?.name ?? "mercadoria";
         ocupar(`${helper.name} repôs ${nome} na prateleira.`, "repor");
         return true;
@@ -730,6 +761,7 @@ export class GameWorld {
   private releaseFinishedEmployees(): void {
     for (const employee of this.state.employees.values()) {
       if (employee.role !== "technician" && employee.isBusy && employee.busyUntil <= this.state.time) {
+        if (employee.currentTask) this.cansar(employee);
         employee.isBusy = false;
         employee.currentTask = undefined;
       }
@@ -748,7 +780,7 @@ export class GameWorld {
     for (const [id, customer] of this.state.customers) {
       if (customer.status === "leaving" && customer.departureTime && customer.departureTime <= this.state.time) {
         this.state.customers.delete(id);
-        if (this.state.selectedCustomerId === id) this.state.selectedCustomerId = undefined;
+        if (this.state.selectedCustomerId === id) this.clearSelectedCustomer();
       }
     }
   }
@@ -898,6 +930,17 @@ export class GameWorld {
   }
 
   private duracaoReparo(base: number): number { return base * (this.temUpgrade("bancadaRapida") ? 0.75 : 1); }
+  private duracaoDoFuncionario(employee: Employee | undefined, base: number): number { return base * (employee && employee.happiness < 40 ? 1.25 : 1); }
+  private cansar(employee: Employee): void { employee.happiness = Math.max(0, employee.happiness - 0.6); }
+  private processarBebedouro(): void {
+    if (this.temUpgrade("bebedouroAutomatico") && this.state.nivelDoBebedouro === 0) this.state.nivelDoBebedouro = GOLES_BEBEDOURO;
+    for (const employee of this.state.employees.values()) {
+      const proximo = this.nextDrinkAt.get(employee.id) ?? this.state.time + INTERVALO_BEBEDOURO;
+      if (this.state.time < proximo) { this.nextDrinkAt.set(employee.id, proximo); continue; }
+      this.nextDrinkAt.set(employee.id, this.state.time + INTERVALO_BEBEDOURO);
+      if (this.state.nivelDoBebedouro > 0) { this.state.nivelDoBebedouro--; employee.happiness = Math.min(100, employee.happiness + 8); }
+    }
+  }
   private proximoSpawnCliente(): number { return this.temUpgrade("letreiroRua") ? this.randomBetween(5, 11) : this.randomBetween(CUSTOMER_SPAWN_MIN_SECONDS, CUSTOMER_SPAWN_MAX_SECONDS); }
   private sortearOfertas(): UpgradeId[] {
     const disponiveis = CATALOGO_MELHORIAS.filter((item) => !this.temUpgrade(item.id) && item.requer.every((requisito) => this.temUpgrade(requisito)));
