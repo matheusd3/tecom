@@ -366,6 +366,12 @@ export class GameWorld {
   }
 
   private finishShift(): void {
+    // A loja fechou: a fila não atravessa magicamente para o próximo dia.
+    // Isso transforma o último minuto em uma decisão real, inclusive quando a
+    // meta já foi atingida e o jogador cogita ignorar quem ficou esperando.
+    for (const customer of this.state.customers.values()) {
+      if (customer.status === "waiting") this.loseCustomer(customer, "ficou sem atendimento até o fechamento");
+    }
     this.analyzeOpportunities();
     const revenue = this.state.totalRevenue - this.shiftStartRevenue;
     const profit = this.state.shiftProfit - (this.state.totalExpenses - this.shiftStartExpenses);
