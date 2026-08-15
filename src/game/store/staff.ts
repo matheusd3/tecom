@@ -12,7 +12,13 @@
 
 import type { Employee, GameState } from "../types";
 import { MOVEIS, centro, type Ponto } from "./layout";
-import { CORES_CLIENTE, PELES, type FabricaDePessoas, type Personagem } from "./characters";
+import {
+  CORES_CLIENTE,
+  PELES,
+  type FabricaDePessoas,
+  type Personagem,
+  type TipoCarga,
+} from "./characters";
 import { PALETA } from "./materials";
 
 /** O vendedor inicial é o boneco do jogador; não pode ter um clone parado. */
@@ -33,14 +39,17 @@ interface Posto {
   giro: number;
 }
 
-type Etapa = "parado" | "indo" | "voltando";
+/** Um trecho do trajeto: para onde ir e o que levar na mão até lá. */
+interface Trecho {
+  destino: Ponto;
+  carga: TipoCarga | null;
+}
 
 interface Membro {
   personagem: Personagem;
   posicao: Ponto;
-  etapa: Etapa;
-  /** Carrega na ida (levar aparelho) ou na volta (trazer reparo pronto). */
-  levaNaIda: boolean;
+  /** Trechos que faltam para terminar a tarefa; vazio = parado no posto. */
+  trajeto: Trecho[];
   ocupadoAntes: boolean;
 }
 
@@ -60,6 +69,38 @@ function postoDeTecnico(indice: number): Posto {
 function pontoDaBancada(): Ponto {
   const bancada = centro(MOVEIS.bancada);
   return { x: bancada.x + 2.4, z: MOVEIS.bancada.minZ - 1.3 };
+}
+
+/** Onde ele pega a mercadoria antes de fechar a venda. */
+function pontoDaPrateleira(): Ponto {
+  const ilha = centro(MOVEIS.ilhaEstoque);
+  return { x: ilha.x + 1.6, z: MOVEIS.ilhaEstoque.minZ - 1.2 };
+}
+
+/**
+ * O trajeto de cada tarefa. Vender é ir buscar na prateleira e voltar com o
+ * produto; reparo é ida e volta até a bancada, com o aparelho na perna certa.
+ */
+function trajetoDaTarefa(
+  tipo: GameState["supportTaskKind"],
+  posto: Ponto
+): Trecho[] {
+  if (tipo === "venda") {
+    return [
+      { destino: pontoDaPrateleira(), carga: null },
+      { destino: posto, carga: "produto" },
+    ];
+  }
+  if (tipo === "trazerReparo") {
+    return [
+      { destino: pontoDaBancada(), carga: null },
+      { destino: posto, carga: "aparelho" },
+    ];
+  }
+  return [
+    { destino: pontoDaBancada(), carga: "aparelho" },
+    { destino: posto, carga: null },
+  ];
 }
 
 export function criarEquipe(fabrica: FabricaDePessoas, world: { getState(): GameState }): Equipe {
@@ -121,8 +162,7 @@ export function criarEquipe(fabrica: FabricaDePessoas, world: { getState(): Game
           membro = {
             personagem: criar(employee, indice),
             posicao: { ...posto.ponto },
-            etapa: "parado",
-            levaNaIda: true,
+            trajeto: [],
             ocupadoAntes: false,
           };
           membro.personagem.raiz.rotation.y = posto.giro;
@@ -139,25 +179,20 @@ export function criarEquipe(fabrica: FabricaDePessoas, world: { getState(): Game
           membro.personagem.definirCarga(employee.isBusy ? "aparelho" : null);
         } else {
           // O núcleo marca o auxiliar como ocupado no instante em que resolve a
-          // tarefa; essa borda é o gatilho da viagem até a bancada.
-          if (employee.isBusy && !membro.ocupadoAntes && membro.etapa === "parado") {
-            membro.etapa = "indo";
-            membro.levaNaIda = !(estado.supportTask ?? "").includes("devolveu");
-            membro.personagem.definirCarga(membro.levaNaIda ? "aparelho" : null);
+          // tarefa; essa borda é o gatilho do trajeto correspondente.
+          if (employee.isBusy && !membro.ocupadoAntes && membro.trajeto.length === 0) {
+            membro.trajeto = trajetoDaTarefa(estado.supportTaskKind, posto.ponto);
+            membro.personagem.definirCarga(membro.trajeto[0].carga);
           }
           membro.ocupadoAntes = employee.isBusy;
 
-          if (membro.etapa === "indo") {
-            if (caminhar(membro, pontoDaBancada(), deltaSeconds)) {
-              membro.etapa = "voltando";
-              // Deixou o aparelho lá, ou pegou o que estava pronto.
-              membro.personagem.definirCarga(membro.levaNaIda ? null : "aparelho");
-            }
-          } else if (membro.etapa === "voltando") {
-            if (caminhar(membro, posto.ponto, deltaSeconds)) {
-              membro.etapa = "parado";
-              membro.personagem.definirCarga(null);
-              membro.personagem.raiz.rotation.y = posto.giro;
+          const trecho = membro.trajeto[0];
+          if (trecho) {
+            if (caminhar(membro, trecho.destino, deltaSeconds)) {
+              membro.trajeto.shift();
+              const proximo = membro.trajeto[0];
+              membro.personagem.definirCarga(proximo ? proximo.carga : null);
+              if (!proximo) membro.personagem.raiz.rotation.y = posto.giro;
             }
           } else {
             membro.posicao.x = posto.ponto.x;

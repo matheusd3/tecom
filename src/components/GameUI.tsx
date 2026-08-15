@@ -736,8 +736,10 @@ export function GameUI(props: GameUIProps) {
                 </button>
               </div>
               <p className="nota">
-                Um atendente auxiliar leva aparelhos à assistência e devolve
-                reparos prontos automaticamente. Técnico assume o conserto.
+                O atendente auxiliar fica no balcão: fecha as vendas pelo preço
+                de vitrine e, quando não há venda, leva e busca aparelhos na
+                assistência — assim você pode ficar na bancada. Desconto ele não
+                dá: continua vindo para você aprovar. Técnico assume o conserto.
               </p>
               {gameState.supportTask && (
                 <p className="nota valor--positivo">→ {gameState.supportTask}</p>

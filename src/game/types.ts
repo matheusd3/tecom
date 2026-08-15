@@ -117,6 +117,8 @@ export interface GameState {
   sales: Sale[];
   repairs: RepairOrder[];
   supportTask?: string;
+  /** Que tipo de tarefa o auxiliar está fazendo — a cena usa para encenar o trajeto. */
+  supportTaskKind?: "venda" | "levarReparo" | "trazerReparo";
   missedSales: number;
   missedRepairs: number;
   idleEmployeeTime: number;

@@ -171,12 +171,17 @@ export class GameWorld {
   }
 
   /** Fecha manualmente uma venda. O jogo nunca vende automaticamente. */
-  public sellToCustomer(customerId: string, offeredPrice: number): ActionResult {
+  /**
+   * `sellerId` existe para o atendente auxiliar fechar a própria venda sem
+   * consumir a disponibilidade do vendedor do jogador.
+   */
+  public sellToCustomer(customerId: string, offeredPrice: number, sellerId?: string): ActionResult {
     const customer = this.state.customers.get(customerId);
     if (!customer?.needsProduct || customer.status !== "waiting") {
       return { ok: false, message: "Esse cliente não está disponível para atendimento." };
     }
-    const seller = this.availableEmployee("seller");
+    const escolhido = sellerId ? this.state.employees.get(sellerId) : this.availableEmployee("seller");
+    const seller = escolhido && !escolhido.isBusy ? escolhido : undefined;
     if (!seller) return { ok: false, message: "Todos os vendedores estão ocupados." };
     const product = this.state.products.get(customer.needsProduct);
     if (!product || product.stock <= 0) return { ok: false, message: "O produto está sem estoque." };
@@ -390,11 +395,20 @@ export class GameWorld {
     technician.busyUntil = repair.endTime;
   }
 
-  /** Um segundo vendedor vira atendente auxiliar de logística dos reparos. */
+  /**
+   * O segundo vendedor é um atendente auxiliar de verdade: ele fica no balcão.
+   * Prioridade dele é VENDER — assim o jogador pode ficar na assistência — e a
+   * logística de reparo é o que ele faz quando não há venda para fechar.
+   *
+   * Ele nunca decide um desconto: se o cliente não paga o preço de vitrine, a
+   * venda continua parada esperando a aprovação do dono da loja. E não rouba o
+   * cliente que o jogador priorizou (quem está com `selectedCustomerId`).
+   */
   private runSupportAttendant(elapsed: number): void {
     const attendants = Array.from(this.state.employees.values()).filter((employee) => employee.role === "seller");
     if (attendants.length < 2) {
       this.state.supportTask = undefined;
+      this.state.supportTaskKind = undefined;
       return;
     }
     this.supportAttendantTimer += elapsed;
@@ -402,22 +416,43 @@ export class GameWorld {
     this.supportAttendantTimer = 0;
     const helper = attendants.find((employee) => !employee.isBusy && employee.id !== "seller-1") ?? attendants[1];
     if (!helper || helper.isBusy) return;
-    const waitingRepair = Array.from(this.state.customers.values()).find((customer) => customer.status === "waiting" && customer.needsService);
+
+    const ocupar = (tarefa: string, tipo: NonNullable<GameState["supportTaskKind"]>) => {
+      helper.isBusy = true;
+      helper.busyUntil = this.state.time + 4;
+      this.state.supportTask = tarefa;
+      this.state.supportTaskKind = tipo;
+    };
+
+    const vendaDireta = Array.from(this.state.customers.values()).find((customer) => {
+      if (customer.status !== "waiting" || !customer.needsProduct) return false;
+      if (customer.id === this.state.selectedCustomerId) return false;
+      const product = this.state.products.get(customer.needsProduct);
+      return !!product && product.stock > 0 && customer.budget >= product.sellingPrice;
+    });
+    if (vendaDireta?.needsProduct) {
+      const product = this.state.products.get(vendaDireta.needsProduct)!;
+      const resultado = this.sellToCustomer(vendaDireta.id, product.sellingPrice, helper.id);
+      if (resultado.ok) {
+        ocupar(`${helper.name} vendeu ${product.name} no balcão.`, "venda");
+        return;
+      }
+    }
+
+    const waitingRepair = Array.from(this.state.customers.values()).find(
+      (customer) => customer.status === "waiting" && customer.needsService && customer.id !== this.state.selectedCustomerId
+    );
     if (waitingRepair) {
       this.receiveRepair(waitingRepair.id);
       this.acceptRepair(waitingRepair.id);
-      helper.isBusy = true;
-      helper.busyUntil = this.state.time + 4;
-      this.state.supportTask = `${helper.name} levou um aparelho para a assistência.`;
+      ocupar(`${helper.name} levou um aparelho para a assistência.`, "levarReparo");
       return;
     }
     const readyRepair = this.state.repairs.find((repair) => repair.status === "ready");
     if (readyRepair) {
       this.collectCompletedRepair(readyRepair.customerId);
       this.returnRepairToCustomer(readyRepair.customerId);
-      helper.isBusy = true;
-      helper.busyUntil = this.state.time + 4;
-      this.state.supportTask = `${helper.name} devolveu um reparo pronto ao balcão.`;
+      ocupar(`${helper.name} devolveu um reparo pronto ao balcão.`, "trazerReparo");
     }
   }
 
