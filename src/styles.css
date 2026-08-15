@@ -885,6 +885,39 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- Controle do atendente ---------- */
+
+.controle-personagem {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  max-width: min(540px, calc(100vw - var(--largura-esquerda) - var(--largura-direita) - 32px));
+  padding: 8px 13px;
+  border: 1px solid rgba(182, 255, 58, 0.55);
+  border-radius: 8px;
+  background: rgba(5, 10, 13, 0.84);
+  color: var(--lima);
+  box-shadow: 0 0 20px rgba(182, 255, 58, 0.13);
+  text-align: center;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.controle-personagem strong {
+  font-family: Orbitron, monospace;
+  font-size: 11px;
+}
+
+.controle-personagem span {
+  color: var(--texto-fraco);
+  font-size: 10px;
+}
+
 /* ---------- Palco central ---------- */
 
 .palco {

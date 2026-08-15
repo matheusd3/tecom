@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Engine } from "@babylonjs/core/Engines/engine";
-import { createGameScene, type GameHandle } from "@/game/scene";
+import { createGameScene, type GameHandle, type PlayerStation } from "@/game/scene";
 import type { GameWorld } from "@/game/GameWorld";
 import type {
   ActionResult,
@@ -26,6 +26,7 @@ interface Instantaneo {
   gameState: GameState | null;
   opportunities: Opportunity[];
   shiftReport: ShiftReport | null;
+  playerStation: PlayerStation;
 }
 
 /** Frequência de sincronização entre a simulação e o React. */
@@ -76,11 +77,13 @@ export default function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const startedRef = useRef(false);
   const worldRef = useRef<GameWorld | null>(null);
+  const handleRef = useRef<GameHandle | null>(null);
 
   const [instantaneo, setInstantaneo] = useState<Instantaneo>({
     gameState: null,
     opportunities: [],
     shiftReport: null,
+    playerStation: "loja",
   });
   const [capacidades, setCapacidades] = useState<Capacidades>({
     iniciarTurno: false,
@@ -97,6 +100,7 @@ export default function GameCanvas() {
       gameState: world.getState(),
       opportunities: [...world.getOpportunities()],
       shiftReport: lerRelatorio(world),
+      playerStation: handleRef.current?.getPlayerStation() ?? "loja",
     });
   }, []);
 
@@ -135,6 +139,7 @@ export default function GameCanvas() {
           return;
         }
         handle = h;
+        handleRef.current = h;
         worldRef.current = h.world;
         setCapacidades({
           iniciarTurno: temMetodo(h.world, "startShift"),
@@ -169,6 +174,7 @@ export default function GameCanvas() {
       handle?.dispose();
       engine.dispose();
       worldRef.current = null;
+      handleRef.current = null;
       startedRef.current = false;
     };
   }, [sincronizar]);
@@ -192,6 +198,9 @@ export default function GameCanvas() {
     (id: string, preco: number): ActionResult => {
       const world = worldRef.current;
       if (!world) return FALHA_SEM_NUCLEO;
+      if (handleRef.current?.getPlayerStation() !== "balcao") {
+        return { ok: false, message: "Vá até o balcão para concluir a venda." };
+      }
       const resultado = world.sellToCustomer(id, preco);
       sincronizar();
       return resultado;
@@ -203,6 +212,9 @@ export default function GameCanvas() {
     (id: string): ActionResult => {
       const world = worldRef.current;
       if (!world) return FALHA_SEM_NUCLEO;
+      if (handleRef.current?.getPlayerStation() !== "bancada") {
+        return { ok: false, message: "Vá até a bancada técnica para aceitar o reparo." };
+      }
       const resultado = world.acceptRepair(id);
       sincronizar();
       return resultado;
@@ -287,6 +299,7 @@ export default function GameCanvas() {
           gameState={instantaneo.gameState}
           opportunities={instantaneo.opportunities}
           shiftReport={instantaneo.shiftReport}
+          playerStation={instantaneo.playerStation}
           capacidades={capacidades}
           onStartShift={iniciarTurno}
           onSelectCustomer={selecionarCliente}

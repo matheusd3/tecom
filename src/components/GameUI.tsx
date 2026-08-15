@@ -17,6 +17,7 @@ import type {
   ProductType,
   ShiftReport,
 } from "@/game/types";
+import type { PlayerStation } from "@/game/scene";
 
 /** O que o núcleo já expõe. Enquanto o Codex termina, a interface se adapta. */
 export interface Capacidades {
@@ -29,6 +30,7 @@ interface GameUIProps {
   gameState: GameState | null;
   opportunities: Opportunity[];
   shiftReport: ShiftReport | null;
+  playerStation: PlayerStation;
   capacidades: Capacidades;
   onStartShift: () => void;
   onSelectCustomer: (id: string) => void;
@@ -302,6 +304,12 @@ export function GameUI(props: GameUIProps) {
   };
 
   const emTurno = fase === "active";
+  const localDoAtendente: Record<PlayerStation, string> = {
+    balcao: "no balcão",
+    prateleira: "nas prateleiras",
+    bancada: "na bancada técnica",
+    loja: "no corredor da loja",
+  };
 
   return (
     <div className={`ui-root fase-${fase}`}>
@@ -408,6 +416,13 @@ export function GameUI(props: GameUIProps) {
             : "Meta do dia ainda não definida pelo núcleo"}
         </span>
       </div>
+
+      {emTurno && (
+        <div className="controle-personagem" aria-live="polite">
+          <strong>Você está {localDoAtendente[props.playerStation]}</strong>
+          <span>WASD / setas para andar · vendas no balcão · reparos na bancada</span>
+        </div>
+      )}
 
       {/* ---------- Palco central ---------- */}
       <main className="palco">
