@@ -5,6 +5,7 @@ export type ServiceType = "diagnosis" | "repair" | "upgrade" | "cleaning";
 export type EmployeeRole = "seller" | "technician" | "manager";
 export type CustomerStatus = "waiting" | "beingServed" | "repairing" | "leaving";
 export type GamePhase = "planning" | "active" | "summary";
+export type ShiftEventType = "influencer" | "couponLeak" | "powerSurge";
 
 export interface Product {
   id: string;
@@ -53,6 +54,16 @@ export interface Customer {
   status: CustomerStatus;
   story: string;
   urgency: "low" | "medium" | "high";
+  /** Clientes excêntricos deixam consequências mais claras no turno. */
+  trait?: "influencer" | "couponHunter" | "panicked";
+}
+
+export interface ShiftEvent {
+  type: ShiftEventType;
+  title: string;
+  description: string;
+  /** Quantos clientes ainda são afetados. */
+  remainingUses: number;
 }
 
 export interface Sale {
@@ -89,6 +100,9 @@ export interface GameState {
   shiftTimeRemaining: number;
   dailyGoal: number;
   reputation: number;
+  shiftRevenue: number;
+  shiftProfit: number;
+  activeEvent?: ShiftEvent;
   selectedCustomerId?: string;
   cash: number;
   totalRevenue: number;
@@ -134,6 +148,7 @@ export interface ShiftReport {
   reputationChange: number;
   goalReached: boolean;
   topOpportunity?: Opportunity;
+  highlights: string[];
 }
 
 export interface GameHandle {

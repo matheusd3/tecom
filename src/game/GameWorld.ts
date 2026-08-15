@@ -10,6 +10,7 @@ import {
   RepairOrder,
   Sale,
   ServiceType,
+  ShiftEvent,
   ShiftReport,
 } from "./types";
 
@@ -18,6 +19,10 @@ const CUSTOMER_PATIENCE_PER_SECOND = 0.38;
 const CUSTOMER_SPAWN_MIN_SECONDS = 7;
 const CUSTOMER_SPAWN_MAX_SECONDS = 15;
 const SHIFT_DURATION = 120;
+const CUSTOMER_NAMES = [
+  "Bia do RGB", "Caio do TCC", "Nando da LAN", "Dona Cida", "Rafa do home office",
+  "Léo do podcast", "Maya do campeonato", "Seu Osmar", "Pri da entrevista", "Gui do servidor",
+];
 
 export class GameWorld {
   private state: GameState;
@@ -34,6 +39,8 @@ export class GameWorld {
   private shiftStartMissed = 0;
   private shiftStartReputation = 60;
   private shiftReport: ShiftReport | null = null;
+  private customerSequence = 0;
+  private shiftHighlights: string[] = [];
 
   constructor() {
     this.state = this.createInitialState();
@@ -102,6 +109,11 @@ export class GameWorld {
     this.shiftStartMissed = this.state.missedSales + this.state.missedRepairs;
     this.shiftStartReputation = this.state.reputation;
     this.shiftReport = null;
+    this.state.shiftRevenue = 0;
+    this.state.shiftProfit = 0;
+    this.shiftHighlights = [];
+    this.state.activeEvent = this.rollShiftEvent();
+    if (this.state.activeEvent) this.addHighlight(this.state.activeEvent.description);
     return { ok: true, message: `Turno ${this.state.day} iniciado.` };
   }
 
@@ -181,11 +193,13 @@ export class GameWorld {
       profit: price - product.costPrice, timestamp: this.state.time,
     });
     this.recordRevenue(price);
+    this.state.shiftProfit += price - product.costPrice;
     customer.satisfaction = Math.min(100, 72 + seller.skill / 4 + (price < product.sellingPrice ? 8 : 0));
     customer.status = "leaving";
     customer.departureTime = this.state.time + 2;
     seller.happiness = Math.min(100, seller.happiness + 1);
-    return { ok: true, message: `Venda fechada por R$ ${price.toFixed(2).replace(".", ",")}.` };
+    const bonus = this.applyCustomerTrait(customer, "sale");
+    return { ok: true, message: `Venda fechada por R$ ${price.toFixed(2).replace(".", ",")}.${bonus}` };
   }
 
   /** Aceita manualmente uma ordem de serviço para o próximo técnico livre. */
@@ -198,7 +212,8 @@ export class GameWorld {
     if (!technician) return { ok: false, message: "Todos os técnicos estão ocupados." };
     const price = 180 + technician.skill * 1.5;
     const cost = price * 0.2;
-    const duration = Math.max(18, 58 - technician.skill * 0.3);
+    const surgeDelay = this.state.activeEvent?.type === "powerSurge" && this.consumeEventUse("powerSurge") ? 18 : 0;
+    const duration = Math.max(18, 58 - technician.skill * 0.3) + surgeDelay;
     const endTime = this.state.time + duration;
     this.state.repairs.push({
       id: `repair-${Math.floor(this.state.time * 1000)}`, customerId: customer.id,
@@ -208,18 +223,15 @@ export class GameWorld {
     customer.status = "repairing";
     technician.isBusy = true;
     technician.busyUntil = endTime;
-    return { ok: true, message: `Ordem aceita: previsão de ${Math.ceil(duration)} s de jogo.` };
+    if (surgeDelay) this.addHighlight("Pico de energia atrasou um reparo em 18 s.");
+    return { ok: true, message: `Ordem aceita: previsão de ${Math.ceil(duration)} s de jogo.${surgeDelay ? " O estabilizador resolveu testar sua paciência." : ""}` };
   }
 
   public declineCustomer(customerId: string): ActionResult {
     const customer = this.state.customers.get(customerId);
     if (!customer || customer.status !== "waiting") return { ok: false, message: "Esse cliente não está disponível." };
-    customer.satisfaction = 20;
-    customer.status = "leaving";
-    customer.departureTime = this.state.time + 2;
-    if (customer.needsProduct) this.state.missedSales++;
-    else this.state.missedRepairs++;
-    return { ok: true, message: "Cliente dispensado." };
+    this.loseCustomer(customer, "dispensado no balcão");
+    return { ok: true, message: "Cliente dispensado. A reputação sentiu a porta batendo." };
   }
 
   public reset(): void {
@@ -229,6 +241,8 @@ export class GameWorld {
     this.opportunityCheckTimer = 0;
     this.lastPayrollMonth = 0;
     this.lastOpportunityAt.clear();
+    this.customerSequence = 0;
+    this.shiftHighlights = [];
   }
 
   private createInitialState(): GameState {
@@ -256,6 +270,7 @@ export class GameWorld {
       time: 0, timeSpeed: 1, isPaused: true, phase: "planning", day: 1,
       shiftDuration: SHIFT_DURATION, shiftTimeRemaining: SHIFT_DURATION, dailyGoal: 900, reputation: 60,
       cash: 10_000,
+      shiftRevenue: 0, shiftProfit: 0,
       totalRevenue: 0, totalExpenses: 0, monthlyRevenue: 0, monthlyExpenses: 0,
       products, employees, customers: new Map(), sales: [], repairs: [],
       missedSales: 0, missedRepairs: 0, idleEmployeeTime: 0,
@@ -274,32 +289,35 @@ export class GameWorld {
     const type = productTypes[Math.floor(Math.random() * productTypes.length)];
     const product = this.state.products.get(type)!;
     const id = `customer-${Math.floor(this.state.time * 1000)}-${Math.floor(Math.random() * 10_000)}`;
+    const trait = this.nextCustomerTrait();
+    const couponDiscount = this.state.activeEvent?.type === "couponLeak" && wantsProduct && this.consumeEventUse("couponLeak") ? 0.12 : 0;
+    const influencerBoost = trait === "influencer" ? 0.12 : 0;
+    this.customerSequence++;
+    const name = trait === "influencer" ? "Nina do TechTok" : `${CUSTOMER_NAMES[(this.customerSequence - 1) % CUSTOMER_NAMES.length]} #${this.customerSequence}`;
     this.state.customers.set(id, {
-      id, name: `Cliente ${this.state.customers.size + 1}`, satisfaction: 55,
+      id, name, satisfaction: 55,
       needsProduct: wantsProduct ? type : undefined,
       needsService: wantsProduct ? undefined : "repair",
       // O orçamento é o máximo que o cliente aceita pagar pelo item pedido.
       // Variar em torno do preço de vitrine cria negociações plausíveis para
       // acessórios baratos e também para notebooks, sem misturar as faixas.
       budget: wantsProduct
-        ? Math.round(product.sellingPrice * this.randomBetween(0.78, 1.18) * 100) / 100
+        ? Math.round(product.sellingPrice * (1 - couponDiscount + influencerBoost) * this.randomBetween(0.78, 1.18) * 100) / 100
         : 0,
-      patience: this.randomBetween(55, 100), arrivalTime: this.state.time, status: "waiting",
+      patience: trait === "panicked" ? this.randomBetween(38, 62) : this.randomBetween(55, 100), arrivalTime: this.state.time, status: "waiting",
       urgency: Math.random() < 0.22 ? "high" : Math.random() < 0.55 ? "medium" : "low",
-      story: wantsProduct ? this.productStory(type) : this.repairStory(),
+      story: this.customerStory(wantsProduct ? this.productStory(type) : this.repairStory(), trait, couponDiscount > 0),
+      trait,
     });
   }
 
   private updateWaitingCustomers(elapsed: number): void {
     for (const customer of this.state.customers.values()) {
       if (customer.status !== "waiting") continue;
-      customer.patience = Math.max(0, customer.patience - elapsed * CUSTOMER_PATIENCE_PER_SECOND);
+      const urgencyMultiplier = customer.urgency === "high" ? 1.65 : customer.urgency === "medium" ? 1.2 : 1;
+      customer.patience = Math.max(0, customer.patience - elapsed * CUSTOMER_PATIENCE_PER_SECOND * urgencyMultiplier);
       if (customer.patience > 0) continue;
-      customer.satisfaction = 0;
-      customer.status = "leaving";
-      customer.departureTime = this.state.time + 2;
-      if (customer.needsProduct) this.state.missedSales++;
-      else this.state.missedRepairs++;
+      this.loseCustomer(customer, "cansou de esperar");
     }
   }
 
@@ -319,6 +337,7 @@ export class GameWorld {
         customer.status = "leaving";
         customer.departureTime = this.state.time + 2;
       }
+      this.state.shiftProfit += repair.profit;
     }
 
   }
@@ -339,14 +358,17 @@ export class GameWorld {
 
   private removeDepartedCustomers(): void {
     for (const [id, customer] of this.state.customers) {
-      if (customer.status === "leaving" && customer.departureTime && customer.departureTime <= this.state.time) this.state.customers.delete(id);
+      if (customer.status === "leaving" && customer.departureTime && customer.departureTime <= this.state.time) {
+        this.state.customers.delete(id);
+        if (this.state.selectedCustomerId === id) this.state.selectedCustomerId = undefined;
+      }
     }
   }
 
   private finishShift(): void {
     this.analyzeOpportunities();
     const revenue = this.state.totalRevenue - this.shiftStartRevenue;
-    const profit = revenue - (this.state.totalExpenses - this.shiftStartExpenses);
+    const profit = this.state.shiftProfit - (this.state.totalExpenses - this.shiftStartExpenses);
     const sales = this.state.sales.length - this.shiftStartSales;
     const repairs = this.state.repairs.filter((repair) => repair.completed).length - this.shiftStartRepairs;
     const customersLost = this.state.missedSales + this.state.missedRepairs - this.shiftStartMissed;
@@ -355,7 +377,7 @@ export class GameWorld {
     this.shiftReport = {
       day: this.state.day, goal: this.state.dailyGoal, revenue, profit, sales, repairs, customersLost,
       reputationChange: this.state.reputation - this.shiftStartReputation,
-      goalReached, topOpportunity: this.opportunities[0],
+      goalReached, topOpportunity: this.opportunities[0], highlights: [...this.shiftHighlights],
     };
     this.state.phase = "summary";
     this.state.isPaused = true;
@@ -437,6 +459,7 @@ export class GameWorld {
     this.state.cash += value;
     this.state.totalRevenue += value;
     this.state.monthlyRevenue += value;
+    this.state.shiftRevenue += value;
   }
 
   private recordExpense(value: number): void {
@@ -467,5 +490,70 @@ export class GameWorld {
   private repairStory(): string {
     const stories = ["O notebook não liga e tenho uma entrega urgente.", "Derrubei água no teclado ontem.", "Meu computador faz um barulho estranho desde cedo."];
     return stories[Math.floor(Math.random() * stories.length)];
+  }
+
+  private rollShiftEvent(): ShiftEvent | undefined {
+    const roll = Math.random();
+    if (roll < 0.28) return {
+      type: "influencer", title: "TechTok na fila",
+      description: "Uma criadora de conteúdo pode aparecer. Uma boa venda vira propaganda gratuita.", remainingUses: 1,
+    };
+    if (roll < 0.52) return {
+      type: "couponLeak", title: "Cupom vazou",
+      description: "Um cupom misterioso circulou no grupo do bairro: os próximos dois clientes chegam querendo desconto.", remainingUses: 2,
+    };
+    if (roll < 0.68) return {
+      type: "powerSurge", title: "Pico de energia",
+      description: "A régua de energia está fazendo barulho de pipoca. O próximo reparo pode atrasar.", remainingUses: 1,
+    };
+    return undefined;
+  }
+
+  private nextCustomerTrait(): Customer["trait"] {
+    if (this.state.activeEvent?.type === "influencer" && this.state.activeEvent.remainingUses > 0) {
+      this.consumeEventUse("influencer");
+      return "influencer";
+    }
+    const roll = Math.random();
+    if (roll < 0.18) return "panicked";
+    if (roll < 0.32) return "couponHunter";
+    return undefined;
+  }
+
+  private customerStory(base: string, trait: Customer["trait"], couponAffected: boolean): string {
+    if (trait === "influencer") return `${base} Ela já abriu a câmera: "se der certo, viraliza".`;
+    if (trait === "panicked") return `${base} Está olhando o relógio a cada cinco segundos.`;
+    if (couponAffected || trait === "couponHunter") return `${base} Chegou com um print de cupom e confiança demais.`;
+    return base;
+  }
+
+  private applyCustomerTrait(customer: Customer, action: "sale" | "repair"): string {
+    if (customer.trait !== "influencer" || action !== "sale") return "";
+    this.state.reputation = Math.min(100, this.state.reputation + 4);
+    this.addHighlight("Nina do TechTok aprovou a compra: +4 de reputação e uma fila mais animada.");
+    return " Nina do TechTok postou a compra: +4 de reputação!";
+  }
+
+  private loseCustomer(customer: Customer, reason: string): void {
+    customer.satisfaction = 0;
+    customer.status = "leaving";
+    customer.departureTime = this.state.time + 2;
+    if (customer.needsProduct) this.state.missedSales++;
+    else this.state.missedRepairs++;
+    const penalty = customer.trait === "influencer" ? 7 : customer.urgency === "high" ? 4 : 2;
+    this.state.reputation = Math.max(0, this.state.reputation - penalty);
+    this.addHighlight(`${customer.name} ${reason}: reputação ${penalty > 0 ? `-${penalty}` : "inalterada"}.`);
+  }
+
+  private consumeEventUse(type: ShiftEvent["type"]): boolean {
+    const event = this.state.activeEvent;
+    if (!event || event.type !== type || event.remainingUses <= 0) return false;
+    event.remainingUses--;
+    return true;
+  }
+
+  private addHighlight(message: string): void {
+    if (!this.shiftHighlights.includes(message)) this.shiftHighlights.push(message);
+    this.shiftHighlights = this.shiftHighlights.slice(-4);
   }
 }
