@@ -178,13 +178,13 @@ export function construirLoja(scene: Scene): Loja {
 function bebedouro(scene: Scene, mats: Materiais, letreiros: Map<Estacao, StandardMaterial>): void {
   const r = MOVEIS.bebedouro;
   const c = centro(r);
-  blocoDoRetangulo(scene, "bebedouro-base", r, 0.82, 0, mats.branco, 0.08);
-  const galao = CreateCylinder("bebedouro-galao", { diameter: 0.48, height: 0.45 }, scene);
-  galao.position.set(c.x, 1.045, c.z);
+  bloco(scene, "bebedouro-base", { l: 1.2, a: 0.86, p: 0.9 }, { x: c.x, y: 0.43, z: c.z }, mats.branco);
+  const galao = CreateCylinder("bebedouro-galao", { diameter: 0.7, height: 0.38 }, scene);
+  galao.position.set(c.x, 1.05, c.z);
   galao.material = mats.vidro;
   galao.freezeWorldMatrix();
   const torneira = CreateBox("bebedouro-torneira", { width: 0.16, height: 0.12, depth: 0.16 }, scene);
-  torneira.position.set(c.x, 0.7, r.minZ - 0.05);
+  torneira.position.set(c.x, 0.68, c.z - 0.48);
   torneira.material = mats.neonCiano;
   torneira.freezeWorldMatrix();
   letreiros.set("bebedouro", mats.neonCiano);
@@ -845,27 +845,6 @@ function decoracao(scene: Scene, mats: Materiais): void {
 
   planta(scene, mats, "plantaEsq", centro(MOVEIS.plantaEsquerda));
   planta(scene, mats, "plantaDir", centro(MOVEIS.plantaDireita));
-
-  // Pilha de caixas de entrega.
-  const cx = centro(MOVEIS.caixasEntrega);
-  const pilha: Array<[number, number, number, number]> = [
-    [-0.7, 0.6, -0.5, 1.2],
-    [0.6, 0.55, 0.4, 1.1],
-    [-0.2, 1.65, -0.1, 1],
-    [0.5, 2.45, 0.5, 0.85],
-  ];
-  for (const [dx, y, dz, escala] of pilha) {
-    const c = CreateBox(`entrega-${dx}-${y}`, { size: 1.2 * escala }, scene);
-    c.position.set(cx.x + dx, y, cx.z + dz);
-    c.rotation.y = dx * 0.4;
-    c.material = mats.papelao;
-    c.freezeWorldMatrix();
-    const fita = CreateBox(`entrega-fita-${dx}-${y}`, { width: 0.2, height: 1.21 * escala, depth: 1.21 * escala }, scene);
-    fita.position.copyFrom(c.position);
-    fita.rotation.y = c.rotation.y;
-    fita.material = mats.fita;
-    fita.freezeWorldMatrix();
-  }
 
   // Cartazes de promoção nas paredes.
   const cartazes: Array<{ nome: string; x: number; y: number; z: number; rotY: number; titulo: string; destaque: string; fundo: string; cor: string }> = [

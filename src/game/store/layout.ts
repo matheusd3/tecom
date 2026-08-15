@@ -68,12 +68,10 @@ export const MOVEIS = {
   bancada: { minX: 5.6, maxX: 11, minZ: 8.8, maxZ: 10.2 } as Retangulo,
   /** Estante do almoxarifado: a mercadoria comprada empilhada nos fundos. */
   estanteAlmoxarifado: { minX: 2.6, maxX: 11, minZ: 14.2, maxZ: 15.4 } as Retangulo,
-  /** Pilha de caixas de entrega. */
-  caixasEntrega: { minX: 9.4, maxX: 11, minZ: 0.4, maxZ: 2.6 } as Retangulo,
   /** Cantinho de espera (pufes e mesinha) no meio do salão. */
   esperaClientes: { minX: 6, maxX: 8.8, minZ: 0.5, maxZ: 2.6 } as Retangulo,
-  /** Baixo (1,25 m) para não ocultar o piso atrás dele nesta câmera fixa. */
-  bebedouro: { minX: 9.1, maxX: 10, minZ: 3.5, maxZ: 4.3 } as Retangulo,
+  /** Ocupa a antiga pilha de entregas; ainda baixo para não ocultar o piso. */
+  bebedouro: { minX: 9.4, maxX: 11, minZ: 0.4, maxZ: 2.6 } as Retangulo,
   plantaEsquerda: { minX: -11, maxX: -9.6, minZ: -11.5, maxZ: -10.1 } as Retangulo,
   plantaDireita: { minX: 9.6, maxX: 11, minZ: -11.5, maxZ: -10.1 } as Retangulo,
 };
