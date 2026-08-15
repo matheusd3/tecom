@@ -679,15 +679,6 @@ function almoxarifado(
     roda.freezeWorldMatrix();
   }
 
-  // Lâmpada simples de galpão, encostada no teto para não cortar a vista.
-  bloco(
-    scene,
-    "almox-luz",
-    { l: l - 1, a: 0.14, p: 0.4 },
-    { x: c.x, y: ALTURA_PAREDE - 0.5, z: c.z - 1.6 },
-    mats.luminaria
-  );
-
   const placa = CreatePlane("placaAlmoxarifado", { width: 5.4, height: 1.3 }, scene);
   placa.position.set(c.x, 5.4, ALMOXARIFADO.maxZ - 0.06);
   placa.material = materialPlaca(scene, "placaAlmoxarifado", "ALMOXARIFADO", "#0d1a22", PALETA.ambar);
