@@ -20,9 +20,11 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 
 import type { GameState } from "../types";
 import {
+  ALMOXARIFADO,
   ALTURA_PAREDE,
   LOJA,
   MOVEIS,
+  PASSAGEM,
   PORTA,
   centro,
   largura,
@@ -129,6 +131,7 @@ function criarMateriais(scene: Scene) {
     neonCiano: neon(scene, "matNeonCiano", PALETA.ciano, 1.15),
     neonMagenta: neon(scene, "matNeonMagenta", PALETA.magenta, 1.15),
     neonLima: neon(scene, "matNeonLima", PALETA.lima, 1.1),
+    neonAmbar: neon(scene, "matNeonAmbar", PALETA.ambar, 1.1),
     luminaria: neon(scene, "matLuminaria", "#fff3d6", 1.05),
     folha: fosco(scene, "matFolha", "#3fbf7f", { brilho: 0.25 }),
     folhaClara: fosco(scene, "matFolhaClara", "#6ee39b", { brilho: 0.25 }),
@@ -175,26 +178,45 @@ export function construirLoja(scene: Scene): Loja {
 function piso(scene: Scene, mats: Materiais, tapetes: Map<Estacao, Tapete>): void {
   const chao = CreateGround(
     "piso",
-    { width: (LOJA.maxX - LOJA.minX) + 2, height: (LOJA.maxZ - LOJA.minZ) + 2 },
+    { width: LOJA.maxX - LOJA.minX + 2, height: LOJA.maxZ - LOJA.minZ + 2 },
     scene
   );
   chao.position.set(0, 0, 0);
   chao.material = mats.piso;
   chao.freezeWorldMatrix();
 
+  // Piso do almoxarifado: cimento, para a sala de serviço não parecer salão.
+  const salaFundos = CreateGround(
+    "pisoAlmoxarifado",
+    {
+      width: ALMOXARIFADO.maxX - ALMOXARIFADO.minX + 1,
+      height: ALMOXARIFADO.maxZ - ALMOXARIFADO.minZ + 1,
+    },
+    scene
+  );
+  const centroSala = centro(ALMOXARIFADO as Retangulo);
+  salaFundos.position.set(centroSala.x, 0.01, centroSala.z);
+  salaFundos.material = fosco(scene, "matPisoAlmox", "#4a5560", { brilho: 0.05 });
+  salaFundos.freezeWorldMatrix();
+
   // Tapetes coloridos: a leitura mais rápida de "onde fica o quê".
   const areas: Array<{ id: Estacao; retangulos: Retangulo[] }> = [
     { id: "balcao", retangulos: [{ minX: -8.6, maxX: 1.6, minZ: -5.8, maxZ: -0.6 }] },
     {
       // Retângulos sem sobreposição: dois tapetes no mesmo plano brigariam.
-      id: "estoque",
+      id: "prateleira",
       retangulos: [
         { minX: -11, maxX: -8, minZ: -2, maxZ: 8 },
-        { minX: -8, maxX: 0.6, minZ: 0.4, maxZ: 4.4 },
         { minX: -11, maxX: 2.6, minZ: 8.2, maxZ: 11.5 },
       ],
     },
-    { id: "assistencia", retangulos: [{ minX: 3.8, maxX: 11, minZ: 7, maxZ: 11.5 }] },
+    { id: "assistencia", retangulos: [{ minX: 4.6, maxX: 11, minZ: 7, maxZ: 11.5 }] },
+    {
+      id: "almoxarifado",
+      retangulos: [
+        { minX: ALMOXARIFADO.minX, maxX: ALMOXARIFADO.maxX, minZ: 12.4, maxZ: 14.2 },
+      ],
+    },
   ];
 
   for (const area of areas) {
@@ -245,9 +267,51 @@ function paredes(scene: Scene, mats: Materiais): void {
     bloco(scene, `${nome}-rodape`, { l: dim.l + 0.06, a: 0.35, p: dim.p + 0.06 }, { ...pos, y: 0.175 }, mats.rodape);
   };
 
-  parede("paredeFundo", { l: l + 1, a: 0, p: 1 }, { x: 0, y: 0, z: LOJA.maxZ + 0.5 });
+  // Parede do fundo à esquerda: cheia, porque atrás dela não há nada para ver.
+  parede(
+    "paredeFundoEsq",
+    { l: ALMOXARIFADO.minX - (LOJA.minX - 0.5), a: 0, p: 1 },
+    { x: (LOJA.minX - 0.5 + ALMOXARIFADO.minX) / 2, y: 0, z: LOJA.maxZ + 0.5 }
+  );
+
+  // Do lado do almoxarifado a divisória é BAIXA: uma parede inteira aqui
+  // esconderia a sala dos fundos por completo nesta câmera.
+  const divisorias = [
+    { min: ALMOXARIFADO.minX, max: PASSAGEM.minX },
+    { min: PASSAGEM.maxX, max: LOJA.maxX + 0.5 },
+  ];
+  for (const faixa of divisorias) {
+    const larguraFaixa = faixa.max - faixa.min;
+    if (larguraFaixa <= 0) continue;
+    const meio = (faixa.min + faixa.max) / 2;
+    bloco(scene, `divisoria-${meio.toFixed(1)}`, { l: larguraFaixa, a: 1.25, p: 1 }, { x: meio, y: 0.625, z: LOJA.maxZ + 0.5 }, mats.paredeBaixa);
+    bloco(scene, `divisoria-topo-${meio.toFixed(1)}`, { l: larguraFaixa, a: 0.12, p: 1.1 }, { x: meio, y: 1.31, z: LOJA.maxZ + 0.5 }, mats.metalEscuro);
+  }
+  // Batentes marcam o vão sem fechar a vista.
+  for (const x of [PASSAGEM.minX, PASSAGEM.maxX]) {
+    bloco(scene, `passagem-batente-${x}`, { l: 0.22, a: 1.7, p: 1.1 }, { x, y: 0.85, z: LOJA.maxZ + 0.5 }, mats.neonAmbar);
+  }
+
   parede("paredeEsq", { l: 1, a: 0, p: p + 1 }, { x: LOJA.minX - 0.5, y: 0, z: 0 });
-  parede("paredeDir", { l: 1, a: 0, p: p + 1 }, { x: LOJA.maxX + 0.5, y: 0, z: 0 });
+  // A da direita segue até o fundo do almoxarifado.
+  const profundidadeDireita = ALMOXARIFADO.maxZ - LOJA.minZ + 1;
+  parede(
+    "paredeDir",
+    { l: 1, a: 0, p: profundidadeDireita },
+    { x: LOJA.maxX + 0.5, y: 0, z: (LOJA.minZ + ALMOXARIFADO.maxZ) / 2 }
+  );
+
+  // Paredes próprias do almoxarifado.
+  parede(
+    "almoxParedeEsq",
+    { l: 1, a: 0, p: ALMOXARIFADO.maxZ - LOJA.maxZ + 1 },
+    { x: ALMOXARIFADO.minX - 0.5, y: 0, z: (LOJA.maxZ + ALMOXARIFADO.maxZ) / 2 }
+  );
+  parede(
+    "almoxParedeFundo",
+    { l: ALMOXARIFADO.maxX - ALMOXARIFADO.minX + 2, a: 0, p: 1 },
+    { x: (ALMOXARIFADO.minX + ALMOXARIFADO.maxX) / 2, y: 0, z: ALMOXARIFADO.maxZ + 0.5 }
+  );
 
   // Frente: mureta baixa com vitrine de vidro, para a câmera enxergar por cima.
   const frenteEsq = { min: LOJA.minX - 0.5, max: PORTA.minX };
@@ -421,23 +485,20 @@ function bancadaTecnica(
   telaDiag.position.set(0, 0, -0.07);
   telaDiag.material = mats.telaAmbar;
 
-  // Painel de ferramentas na parede do fundo, logo atrás da bancada.
-  const pegboard = bloco(
+  // Trilho de ferramentas na borda da bancada. Era um painel alto na parede,
+  // mas ele tapava a sala dos fundos inteira nesta câmera.
+  bloco(
     scene,
-    "bancada-pegboard",
-    { l: largura(r) - 0.8, a: 2.4, p: 0.12 },
-    { x: c.x, y: 3, z: LOJA.maxZ - 0.1 },
+    "bancada-trilho",
+    { l: largura(r) - 1.2, a: 0.5, p: 0.1 },
+    { x: c.x, y: 1.35, z: r.maxZ - 0.2 },
     mats.madeiraEscura
   );
-  pegboard.freezeWorldMatrix();
-  const ferramenta = (nome: string, x: number, y: number, alturaF: number, diametro: number) => {
-    const f = CreateCylinder(nome, { diameter: diametro, height: alturaF }, scene);
-    f.position.set(x, y, LOJA.maxZ - 0.22);
+  for (let i = 0; i < 5; i++) {
+    const f = CreateCylinder(`ferramenta-${i}`, { diameter: 0.1, height: 0.42 }, scene);
+    f.position.set(r.minX + 1.2 + i * 1.05, 1.42, r.maxZ - 0.32);
     f.material = mats.metal;
     f.freezeWorldMatrix();
-  };
-  for (let i = 0; i < 5; i++) {
-    ferramenta(`ferramenta-${i}`, r.minX + 1.2 + i * 1.1, 3.2 + (i % 2) * 0.5, 0.9 + (i % 3) * 0.2, 0.1);
   }
 
   // Luminária de bancada.
@@ -452,18 +513,25 @@ function bancadaTecnica(
   cupula.material = mats.luminaria;
   cupula.freezeWorldMatrix();
 
-  // Letreiro "ASSISTÊNCIA" na parede do fundo, acima do painel de ferramentas.
-  const placa = CreatePlane("placaAssistencia", { width: 5, height: 1.4 }, scene);
-  placa.position.set(c.x, 5.2, LOJA.maxZ - 0.06);
+  // Letreiro "ASSISTÊNCIA" pendurado sobre a bancada. Fica alto e fino: a
+  // faixa que ele esconde cai na parede do fundo, não no chão da sala.
+  const placa = CreatePlane("placaAssistencia", { width: 4.6, height: 1.2 }, scene);
+  placa.position.set(c.x, 5, r.minZ + 0.2);
   placa.material = materialPlaca(scene, "placaAssistencia", "ASSISTÊNCIA", "#0d1a22", PALETA.magenta);
   placa.freezeWorldMatrix();
   const moldura = bloco(
     scene,
     "placaAssistencia-moldura",
-    { l: 5.4, a: 0.14, p: 0.14 },
-    { x: c.x, y: 4.4, z: LOJA.maxZ - 0.12 },
+    { l: 5, a: 0.13, p: 0.13 },
+    { x: c.x, y: 4.32, z: r.minZ + 0.2 },
     neon(scene, "matPlacaAssistNeon", PALETA.magenta, 1.05)
   );
+  for (const dx of [-2.1, 2.1]) {
+    const haste = CreateCylinder(`placaAssist-haste-${dx}`, { diameter: 0.07, height: 1.4 }, scene);
+    haste.position.set(c.x + dx, 6.3, r.minZ + 0.2);
+    haste.material = mats.metalEscuro;
+    haste.freezeWorldMatrix();
+  }
   letreiros.set("assistencia", moldura.material as StandardMaterial);
 }
 
@@ -517,8 +585,21 @@ function estoque(scene: Scene, mats: Materiais, letreiros: Map<Estacao, Standard
 
   prateleiraDeParede(scene, mats, caixa, MOVEIS.prateleiraFundo, "fundo");
   prateleiraDeParede(scene, mats, caixa, MOVEIS.prateleiraEsquerda, "esquerda");
-  const moldura = ilhaDeEstoque(scene, mats, caixa, MOVEIS.ilhaEstoque);
-  letreiros.set("estoque", moldura);
+
+  // A área de venda não ganha placa: o letreiro da loja já ocupa essa parede.
+  // O destaque é uma régua de neon na borda da prateleira, que acende quando o
+  // atendente chega.
+  const rf = MOVEIS.prateleiraFundo;
+  const moldura = bloco(
+    scene,
+    "prateleira-neon",
+    { l: largura(rf) - 0.3, a: 0.12, p: 0.14 },
+    { x: centro(rf).x, y: 4.28, z: rf.minZ + 0.1 },
+    neon(scene, "matPrateleiraNeon", PALETA.lima, 1.05)
+  );
+  letreiros.set("prateleira", moldura.material as StandardMaterial);
+
+  almoxarifado(scene, mats, caixa, letreiros);
 
   // Ilha de vitrine perto da entrada: notebooks em exposição.
   const v = MOVEIS.vitrine;
@@ -533,63 +614,94 @@ function estoque(scene: Scene, mats: Materiais, letreiros: Map<Estacao, Standard
 type FabricaCaixa = (hex: string, pos: Vector3, escala: Vector3) => void;
 
 /**
- * Ilha baixa: produtos vistos de cima, sem tapar quem está atrás. É aqui que o
- * atendente "pega" a mercadoria antes de levar ao balcão.
+ * Almoxarifado: sala de serviço nos fundos. Estante industrial com a mercadoria
+ * comprada, pilhas de caixa no chão e um carrinho — nada de vitrine, porque
+ * cliente não entra aqui.
  */
-function ilhaDeEstoque(
+function almoxarifado(
   scene: Scene,
   mats: Materiais,
   caixa: FabricaCaixa,
-  r: Retangulo
-): StandardMaterial {
+  letreiros: Map<Estacao, StandardMaterial>
+): void {
+  const r = MOVEIS.estanteAlmoxarifado;
   const c = centro(r);
   const l = largura(r);
-  const p = profundidade(r);
 
-  blocoDoRetangulo(scene, "ilha-corpo", r, 0.78, 0, mats.madeiraEscura);
-  blocoDoRetangulo(scene, "ilha-tampo", r, 0.12, 0.78, mats.branco, -0.25);
-  bloco(scene, "ilha-friso", { l: l + 0.2, a: 0.09, p: 0.16 }, { x: c.x, y: 0.88, z: r.minZ - 0.12 }, mats.neonLima);
-
-  // Duas fileiras de produto sobre o tampo.
-  const colunas = 5;
-  for (let i = 0; i < colunas; i++) {
-    const x = r.minX + 0.9 + (i * (l - 1.8)) / (colunas - 1);
-    caixa(
-      CORES_PRODUTO[(i * 3) % CORES_PRODUTO.length],
-      new Vector3(x, 1.13, c.z - p / 4),
-      new Vector3(0.75, 0.44, 0.55)
+  // Estante de aço: três níveis lotados de caixa.
+  bloco(scene, "almox-base", { l, a: 0.28, p: profundidade(r) }, { x: c.x, y: 0.14, z: c.z }, mats.metalEscuro);
+  bloco(scene, "almox-costado", { l, a: 4, p: 0.18 }, { x: c.x, y: 2, z: r.maxZ - 0.09 }, mats.metalEscuro);
+  const niveis = [0.95, 2.05, 3.15];
+  niveis.forEach((y, nivel) => {
+    bloco(
+      scene,
+      `almox-nivel-${nivel}`,
+      { l: l - 0.2, a: 0.1, p: profundidade(r) - 0.15 },
+      { x: c.x, y, z: c.z },
+      mats.metal
     );
-    if (i % 2 === 0) {
-      notebookAberto(scene, mats, `ilha-note-${i}`, x, 0.9, c.z + p / 4, i % 4 === 0);
-    } else {
+    const quantidade = Math.floor(l / 1.5);
+    for (let i = 0; i < quantidade; i++) {
+      const x = r.minX + 0.9 + (i * (l - 1.8)) / Math.max(1, quantidade - 1);
       caixa(
-        CORES_PRODUTO[(i * 3 + 4) % CORES_PRODUTO.length],
-        new Vector3(x, 1.13, c.z + p / 4),
-        new Vector3(0.7, 0.44, 0.5)
+        CORES_PRODUTO[(i + nivel * 2) % CORES_PRODUTO.length],
+        new Vector3(x, y + 0.42, c.z),
+        new Vector3(1.15, 0.74, 0.85)
       );
     }
+  });
+
+  // Pilhas soltas e carrinho de carga: cara de depósito.
+  for (const [dx, dz, altura] of [
+    [-0.2, -2.2, 0.6],
+    [0.9, -2.6, 0.6],
+    [0.35, -2.4, 1.75],
+  ] as const) {
+    const pilha = CreateBox(`almox-pilha-${dx}-${dz}`, { size: 1.15 }, scene);
+    pilha.position.set(ALMOXARIFADO.minX + 1.6 + dx, altura, c.z + dz);
+    pilha.rotation.y = dx * 0.5;
+    pilha.material = mats.papelao;
+    pilha.freezeWorldMatrix();
+  }
+  const carrinho = bloco(
+    scene,
+    "almox-carrinho",
+    { l: 1.6, a: 0.12, p: 1 },
+    { x: ALMOXARIFADO.maxX - 1.6, y: 0.42, z: c.z - 2.4 },
+    mats.metal
+  );
+  carrinho.rotation.y = 0.3;
+  for (const dx of [-0.6, 0.6]) {
+    const roda = CreateCylinder(`almox-roda-${dx}`, { diameter: 0.36, height: 0.12 }, scene);
+    roda.position.set(ALMOXARIFADO.maxX - 1.6 + dx, 0.18, c.z - 2.4);
+    roda.rotation.z = Math.PI / 2;
+    roda.material = mats.preto;
+    roda.freezeWorldMatrix();
   }
 
-  // Placa de balcão baixa: identifica o estoque sem esconder o salão.
-  const placa = CreatePlane("placaEstoque", { width: 2.6, height: 0.8 }, scene);
-  placa.position.set(r.minX + 1.4, 1.55, r.minZ + 0.15);
-  placa.material = materialPlaca(scene, "placaEstoque", "ESTOQUE", "#0d1a22", PALETA.lima);
+  // Lâmpada simples de galpão, encostada no teto para não cortar a vista.
+  bloco(
+    scene,
+    "almox-luz",
+    { l: l - 1, a: 0.14, p: 0.4 },
+    { x: c.x, y: ALTURA_PAREDE - 0.5, z: c.z - 1.6 },
+    mats.luminaria
+  );
+
+  const placa = CreatePlane("placaAlmoxarifado", { width: 5.4, height: 1.3 }, scene);
+  placa.position.set(c.x, 5.4, ALMOXARIFADO.maxZ - 0.06);
+  placa.material = materialPlaca(scene, "placaAlmoxarifado", "ALMOXARIFADO", "#0d1a22", PALETA.ambar);
   placa.freezeWorldMatrix();
   const moldura = bloco(
     scene,
-    "placaEstoque-moldura",
-    { l: 2.8, a: 0.12, p: 0.12 },
-    { x: r.minX + 1.4, y: 1.08, z: r.minZ + 0.15 },
-    neon(scene, "matPlacaEstoqueNeon", PALETA.lima, 1.05)
+    "placaAlmoxarifado-moldura",
+    { l: 5.8, a: 0.14, p: 0.14 },
+    { x: c.x, y: 4.65, z: ALMOXARIFADO.maxZ - 0.12 },
+    neon(scene, "matPlacaAlmoxNeon", PALETA.ambar, 1.05)
   );
-  for (const dx of [-1.2, 1.2]) {
-    const haste = CreateCylinder(`placaEstoque-haste-${dx}`, { diameter: 0.06, height: 0.75 }, scene);
-    haste.position.set(r.minX + 1.4 + dx, 1.3, r.minZ + 0.15);
-    haste.material = mats.metalEscuro;
-    haste.freezeWorldMatrix();
-  }
-  return moldura.material as StandardMaterial;
+  letreiros.set("almoxarifado", moldura.material as StandardMaterial);
 }
+
 
 /**
  * Prateleira alta encostada na parede. `orientacao` diz para que lado ela olha:
@@ -653,14 +765,8 @@ function prateleiraDeParede(
 
   if (!aoLongoDeX) return;
 
-  // Sinalização de corredor, presa na parede acima da prateleira.
-  const setas = ["PEÇAS", "PERIFÉRICOS"];
-  setas.forEach((texto, i) => {
-    const placa = CreatePlane(`placaCorredor-${i}`, { width: 3.4, height: 0.9 }, scene);
-    placa.position.set(c.x - 3.4 + i * 6.8, 4.75, r.maxZ - 0.08);
-    placa.material = materialPlaca(scene, `placaCorredor-${i}`, texto, "#12242e", PALETA.branco);
-    placa.freezeWorldMatrix();
-  });
+  // As placas de corredor saíram: nesta parede elas caíam em cima do letreiro
+  // da loja. Quem identifica a área agora é a régua de neon da prateleira.
 }
 
 // ------------------------------------------------------------- pequenos
@@ -718,22 +824,15 @@ function notebookAberto(
 // ------------------------------------------------------------ decoração
 
 function decoracao(scene: Scene, mats: Materiais): void {
-  // Luminárias suspensas: linhas de luz que também organizam a leitura.
-  const trilhos: Array<{ x: number; z: number; l: number; material: StandardMaterial }> = [
-    { x: -3, z: -7.6, l: 11, material: mats.luminaria },
-    { x: -1.5, z: 0.6, l: 15, material: mats.luminaria },
-    { x: 7, z: 5.4, l: 7, material: mats.luminaria },
-    { x: -4.5, z: 8.8, l: 12, material: mats.luminaria },
+  // As luminárias suspensas saíram: penduradas no meio do salão, elas cortavam
+  // a visão do atendente e da fila. A luz agora vem só das paredes e do teto.
+  const arandelas: Array<[number, number]> = [
+    [LOJA.minX + 0.35, -4],
+    [LOJA.minX + 0.35, 5],
+    [LOJA.maxX - 0.35, 4],
   ];
-  for (const t of trilhos) {
-    bloco(scene, `luz-${t.x}-${t.z}`, { l: t.l, a: 0.22, p: 0.5 }, { x: t.x, y: 6.1, z: t.z }, t.material);
-    bloco(scene, `luz-calha-${t.x}-${t.z}`, { l: t.l + 0.3, a: 0.18, p: 0.75 }, { x: t.x, y: 6.35, z: t.z }, mats.metalEscuro);
-    for (const dx of [-t.l / 2 + 0.6, t.l / 2 - 0.6]) {
-      const cabo = CreateCylinder(`luz-cabo-${t.x}-${t.z}-${dx}`, { diameter: 0.05, height: 1.2 }, scene);
-      cabo.position.set(t.x + dx, 7, t.z);
-      cabo.material = mats.metalEscuro;
-      cabo.freezeWorldMatrix();
-    }
+  for (const [x, z] of arandelas) {
+    bloco(scene, `arandela-${x}-${z}`, { l: 0.24, a: 0.5, p: 1.8 }, { x, y: 5.4, z }, mats.luminaria);
   }
 
   planta(scene, mats, "plantaEsq", centro(MOVEIS.plantaEsquerda));

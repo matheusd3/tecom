@@ -15,7 +15,10 @@ export interface Product {
   basePrice: number;
   costPrice: number;
   sellingPrice: number;
+  /** Unidades na PRATELEIRA: só o que está exposto pode ser vendido. */
   stock: number;
+  /** Unidades no almoxarifado, esperando alguém levar para a prateleira. */
+  storage: number;
   demand: number;
   repairRate: number;
   unitsSold: number;
@@ -45,7 +48,7 @@ export interface Employee {
    * uma só no estado) porque vários auxiliares podem estar em tarefas
    * diferentes ao mesmo tempo, e a cena precisa animar o trajeto de cada um.
    */
-  currentTask?: "venda" | "levarReparo" | "trazerReparo";
+  currentTask?: "venda" | "levarReparo" | "trazerReparo" | "repor";
 }
 
 export interface Customer {
@@ -138,7 +141,7 @@ export interface GameState {
   repairs: RepairOrder[];
   supportTask?: string;
   /** Que tipo de tarefa o auxiliar está fazendo — a cena usa para encenar o trajeto. */
-  supportTaskKind?: "venda" | "levarReparo" | "trazerReparo";
+  supportTaskKind?: "venda" | "levarReparo" | "trazerReparo" | "repor";
   /** Venda que o auxiliar não pode fechar sozinho: espera o aval do jogador. */
   pendingDiscount?: DiscountRequest;
   missedSales: number;

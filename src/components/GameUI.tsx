@@ -87,6 +87,13 @@ const SALARIOS: Record<EmployeeRole, number> = {
   manager: 3000,
 };
 
+/** Espelha o teto do núcleo; o vendedor inicial é o jogador e não conta. */
+const LIMITE_EQUIPE: Record<EmployeeRole, number> = {
+  seller: 2,
+  technician: 3,
+  manager: 1,
+};
+
 const FUNCOES: Record<EmployeeRole, string> = {
   seller: "Vendedor",
   technician: "Técnico",
@@ -108,14 +115,16 @@ const URGENCIA: Record<Customer["urgency"], string> = {
 
 const ROTULO_ESTACAO: Record<PlayerStation, string> = {
   balcao: "no balcão",
-  estoque: "nas prateleiras",
+  prateleira: "nas prateleiras",
+  almoxarifado: "no almoxarifado",
   assistencia: "na bancada técnica",
   loja: "andando pela loja",
 };
 
 /** Chegar numa estação abre o painel que serve para agir ali. */
 const ABA_DA_ESTACAO: Partial<Record<PlayerStation, AbaLateral>> = {
-  estoque: "estoque",
+  prateleira: "estoque",
+  almoxarifado: "estoque",
   assistencia: "equipe",
 };
 
@@ -259,6 +268,11 @@ export function GameUI(props: GameUIProps) {
   const produtos = Array.from(gameState.products.values());
   const funcionarios = Array.from(gameState.employees.values());
   const clientes = Array.from(gameState.customers.values());
+  // O vendedor da casa é o próprio jogador: ele não ocupa vaga de contratação.
+  const contratados = (funcao: EmployeeRole) =>
+    funcionarios.filter((f) => f.role === funcao && f.id !== "seller-1").length;
+  const vagasAuxiliar = LIMITE_EQUIPE.seller - contratados("seller");
+  const vagasTecnico = LIMITE_EQUIPE.technician - contratados("technician");
 
   const fase = faseDe(gameState.phase);
   const dia = numero(gameState.day, 1);
@@ -522,7 +536,9 @@ export function GameUI(props: GameUIProps) {
             carregando <strong>{props.carriedProductName}</strong> ·{" "}
             {props.carriedProductName.startsWith("aparelho")
               ? "leve à bancada"
-              : "leve ao balcão"}
+              : props.carriedProductName.startsWith("caixa")
+                ? "leve à prateleira"
+                : "leve ao balcão"}
           </span>
         )}
       </div>
@@ -624,15 +640,7 @@ export function GameUI(props: GameUIProps) {
               onAceitarReparo={(id) => aplicarResultado(props.onAcceptRepair(id))}
               onRecusar={(id) => aplicarResultado(props.onDecline(id))}
             />
-          ) : (
-            <section className="palco__card palco__card--vazio">
-              <h2 className="palco__titulo">Balcão livre</h2>
-              <p className="palco__texto">
-                Ninguém esperando agora. Aproveite para repor estoque — o próximo
-                cliente entra a qualquer momento.
-              </p>
-            </section>
-          ))
+          ) : null)
         )}
       </main>
 
@@ -697,12 +705,21 @@ export function GameUI(props: GameUIProps) {
                         />
                       </div>
                     </div>
-                    <span
-                      className={`produto__estoque ${
-                        p.stock < 2 ? "valor--negativo" : "valor--ciano"
-                      }`}
-                    >
-                      {p.stock}
+                    {/* Dois números porque são dois lugares: o que está à
+                        venda e o que ainda precisa ser trazido dos fundos. */}
+                    <span className="produto__estoque">
+                      <strong
+                        className={p.stock < 2 ? "valor--negativo" : "valor--ciano"}
+                        title="Na prateleira, pronto para vender"
+                      >
+                        {p.stock}
+                      </strong>
+                      <small
+                        className={p.storage > 0 ? "valor--alerta" : ""}
+                        title="No almoxarifado, esperando reposição"
+                      >
+                        +{p.storage}
+                      </small>
                     </span>
                     <button
                       className="btn btn--pequeno"
@@ -783,21 +800,37 @@ export function GameUI(props: GameUIProps) {
                 </div>
               ))}
               <div className="acoes">
-                <button className="btn btn--largo" onClick={() => contratar("seller")}>
-                  + Atendente auxiliar ({formatarMoeda(SALARIOS.seller * 2)})
+                <button
+                  className="btn btn--largo"
+                  onClick={() => contratar("seller")}
+                  disabled={vagasAuxiliar === 0}
+                  title={
+                    vagasAuxiliar === 0
+                      ? `A loja comporta ${LIMITE_EQUIPE.seller} auxiliares`
+                      : `Contratar por ${formatarMoeda(SALARIOS.seller * 2)}`
+                  }
+                >
+                  + Atendente auxiliar ({vagasAuxiliar}/{LIMITE_EQUIPE.seller})
                 </button>
                 <button
                   className="btn btn--largo"
                   onClick={() => contratar("technician")}
+                  disabled={vagasTecnico === 0}
+                  title={
+                    vagasTecnico === 0
+                      ? `A bancada comporta ${LIMITE_EQUIPE.technician} técnicos`
+                      : `Contratar por ${formatarMoeda(SALARIOS.technician * 2)}`
+                  }
                 >
-                  + Técnico ({formatarMoeda(SALARIOS.technician * 2)})
+                  + Técnico ({vagasTecnico}/{LIMITE_EQUIPE.technician})
                 </button>
               </div>
               <p className="nota">
-                O atendente auxiliar fica no balcão: fecha as vendas pelo preço
-                de vitrine e, quando não há venda, leva e busca aparelhos na
-                assistência — assim você pode ficar na bancada. Desconto ele não
-                dá: continua vindo para você aprovar. Técnico assume o conserto.
+                A loja comporta {LIMITE_EQUIPE.seller} auxiliares e{" "}
+                {LIMITE_EQUIPE.technician} técnicos. O auxiliar fica no balcão:
+                fecha venda pelo preço de vitrine, repõe prateleira quando sobra
+                tempo e leva/busca aparelho na assistência — assim você pode
+                ficar na bancada. Desconto ele não dá: vem para você aprovar.
               </p>
               {gameState.supportTask && (
                 <p className="nota valor--positivo">→ {gameState.supportTask}</p>
@@ -990,65 +1023,51 @@ function PostoAtendimento({
 
       {cliente.needsProduct && (
         <>
-          <div className="posto__pedido">
-            <div className="kpi">
-              <span className="kpi__rotulo">Quer levar</span>
-              <strong className="kpi__valor">
-                {produto?.name ?? cliente.needsProduct}
-              </strong>
+          {/* Uma linha em vez de quatro caixas: o cartão fica pequeno e a loja
+              continua à vista atrás dele. */}
+          <dl className="ficha">
+            <div className="ficha__item">
+              <dt>Quer</dt>
+              <dd>{produto?.name ?? cliente.needsProduct}</dd>
             </div>
-            <div className="kpi">
-              <span className="kpi__rotulo">Preço de vitrine</span>
-              <strong className="kpi__valor valor--ciano">
-                {formatarMoeda(precoVitrine)}
-              </strong>
+            <div className="ficha__item">
+              <dt>Vitrine</dt>
+              <dd className="valor--ciano">{formatarMoeda(precoVitrine)}</dd>
             </div>
-            <div className="kpi">
-              <span className="kpi__rotulo">Aceita pagar até</span>
-              <strong
-                className={`kpi__valor ${
+            <div className="ficha__item">
+              <dt>Paga até</dt>
+              <dd
+                className={
                   cliente.budget >= precoVitrine ? "valor--positivo" : "valor--negativo"
-                }`}
+                }
               >
                 {formatarMoeda(cliente.budget)}
-              </strong>
+              </dd>
             </div>
-            <div className="kpi">
-              <span className="kpi__rotulo">Em estoque</span>
-              <strong
-                className={`kpi__valor ${semEstoque ? "valor--negativo" : ""}`}
-              >
+            <div className="ficha__item">
+              <dt>Prateleira</dt>
+              <dd className={semEstoque ? "valor--negativo" : ""}>
                 {produto?.stock ?? 0}
-              </strong>
+              </dd>
             </div>
-          </div>
+          </dl>
 
-          <div className="posto__oferta">
-            <span className="linha__rotulo">Fechar por R$</span>
+          <div className="posto__acoes">
             <input
-              className="entrada"
+              className="entrada entrada--oferta"
               type="number"
               step="1"
               min={0}
               value={oferta ?? precoVitrine.toFixed(2)}
               onChange={(e) => onOferta(e.target.value)}
+              title="Valor de fechamento"
             />
             <button
-              className="btn btn--pequeno"
-              onClick={() => onOferta(cliente.budget.toFixed(2))}
-              title="Igualar ao limite do cliente"
-            >
-              = orçamento
-            </button>
-          </div>
-
-          <div className="posto__acoes">
-            <button
-              className="btn btn--gigante btn--sucesso"
+              className="btn btn--sucesso btn--fechar"
               disabled={!ofertaValida}
               onClick={() => onVender(cliente, valorOferta)}
             >
-              Vender por {formatarMoeda(ofertaValida ? valorOferta : 0)}
+              Vender
             </button>
             <button className="btn" onClick={() => onRecusar(cliente.id)}>
               Dispensar
@@ -1059,16 +1078,16 @@ function PostoAtendimento({
 
       {cliente.needsService && (
         <>
-          <div className="posto__pedido">
-            <div className="kpi">
-              <span className="kpi__rotulo">Precisa de</span>
-              <strong className="kpi__valor">Assistência técnica</strong>
+          <dl className="ficha">
+            <div className="ficha__item">
+              <dt>Precisa de</dt>
+              <dd>Assistência técnica</dd>
             </div>
-            <div className="kpi">
-              <span className="kpi__rotulo">Situação</span>
-              <strong className="kpi__valor">{STATUS_CLIENTE[cliente.status]}</strong>
+            <div className="ficha__item">
+              <dt>Situação</dt>
+              <dd>{STATUS_CLIENTE[cliente.status]}</dd>
             </div>
-          </div>
+          </dl>
           <div className="posto__acoes">
             <button
               className="btn btn--gigante btn--sucesso"

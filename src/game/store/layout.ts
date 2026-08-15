@@ -19,7 +19,12 @@ export interface Ponto {
   z: number;
 }
 
-export type Estacao = "balcao" | "estoque" | "assistencia";
+/**
+ * Estações de trabalho. "prateleira" é a mercadoria exposta, de onde sai a
+ * venda; "almoxarifado" é a sala dos fundos, onde a compra chega e de onde se
+ * repõe a prateleira.
+ */
+export type Estacao = "balcao" | "prateleira" | "assistencia" | "almoxarifado";
 
 // A loja é propositalmente mais funda do que larga: os painéis da interface
 // ocupam as laterais da tela, então o que sobra para a cena é uma janela alta.
@@ -31,6 +36,16 @@ export const ALTURA_PAREDE = 7;
 /** Vão da porta de entrada na parede da frente. */
 export const PORTA = { minX: 5, maxX: 9, z: -11.5 };
 
+/**
+ * Almoxarifado: sala nos fundos, atrás da assistência. É onde a mercadoria
+ * comprada chega. Da prateleira sai o que se vende; daqui sai o que repõe a
+ * prateleira, e alguém precisa carregar de um lado para o outro.
+ */
+export const ALMOXARIFADO = { minX: 2.6, maxX: 11, minZ: 11.5, maxZ: 15.4 };
+
+/** Passagem entre o salão e o almoxarifado, na parede do fundo. */
+export const PASSAGEM = { minX: 3.2, maxX: 5.4 };
+
 // ---------------------------------------------------------------- móveis
 
 // Regra de composição desta câmera: móvel alto esconde o chão logo atrás dele.
@@ -41,8 +56,6 @@ export const MOVEIS = {
   balcao: { minX: -8, maxX: 1, minZ: -5, maxZ: -3 } as Retangulo,
   /** Ilha de vitrine ao lado da entrada. */
   vitrine: { minX: 3, maxX: 6.5, minZ: -5, maxZ: -3.4 } as Retangulo,
-  /** Ilha baixa de estoque no meio do salão. */
-  ilhaEstoque: { minX: -7, maxX: -1, minZ: 2.2, maxZ: 3.6 } as Retangulo,
   /** Prateleira alta encostada na parede esquerda. */
   prateleiraEsquerda: { minX: -11, maxX: -9.6, minZ: -2, maxZ: 8 } as Retangulo,
   /** Prateleira alta encostada na parede do fundo. */
@@ -52,7 +65,9 @@ export const MOVEIS = {
    * parede: a faixa que sobra atrás é onde o técnico trabalha, como em loja de
    * verdade — cliente e atendente ficam do lado de cá.
    */
-  bancada: { minX: 4.5, maxX: 11, minZ: 8.8, maxZ: 10.2 } as Retangulo,
+  bancada: { minX: 5.6, maxX: 11, minZ: 8.8, maxZ: 10.2 } as Retangulo,
+  /** Estante do almoxarifado: a mercadoria comprada empilhada nos fundos. */
+  estanteAlmoxarifado: { minX: 2.6, maxX: 11, minZ: 14.2, maxZ: 15.4 } as Retangulo,
   /** Pilha de caixas de entrega. */
   caixasEntrega: { minX: 9.4, maxX: 11, minZ: 0.4, maxZ: 2.6 } as Retangulo,
   /** Cantinho de espera (pufes e mesinha) no meio do salão. */
@@ -70,12 +85,18 @@ export const MOVEIS = {
  */
 const FOLGA_PAREDE = 2;
 export const COLISORES: Retangulo[] = [
-  { minX: LOJA.minX - FOLGA_PAREDE, maxX: LOJA.maxX + FOLGA_PAREDE, minZ: LOJA.maxZ, maxZ: LOJA.maxZ + FOLGA_PAREDE },
+  // Laterais do salão. A da direita segue até o fundo do almoxarifado.
   { minX: LOJA.minX - FOLGA_PAREDE, maxX: LOJA.minX, minZ: LOJA.minZ - FOLGA_PAREDE, maxZ: LOJA.maxZ + FOLGA_PAREDE },
-  { minX: LOJA.maxX, maxX: LOJA.maxX + FOLGA_PAREDE, minZ: LOJA.minZ - FOLGA_PAREDE, maxZ: LOJA.maxZ + FOLGA_PAREDE },
+  { minX: LOJA.maxX, maxX: LOJA.maxX + FOLGA_PAREDE, minZ: LOJA.minZ - FOLGA_PAREDE, maxZ: ALMOXARIFADO.maxZ + FOLGA_PAREDE },
   // A frente é fechada inteira, inclusive o vão da porta: o cliente entra por
   // ali porque clientes não colidem, mas o atendente não sai da loja.
   { minX: LOJA.minX - FOLGA_PAREDE, maxX: LOJA.maxX + FOLGA_PAREDE, minZ: LOJA.minZ - FOLGA_PAREDE, maxZ: LOJA.minZ },
+  // Parede do fundo do salão, partida no vão que leva ao almoxarifado.
+  { minX: LOJA.minX - FOLGA_PAREDE, maxX: PASSAGEM.minX, minZ: LOJA.maxZ, maxZ: LOJA.maxZ + 0.6 },
+  { minX: PASSAGEM.maxX, maxX: LOJA.maxX + FOLGA_PAREDE, minZ: LOJA.maxZ, maxZ: LOJA.maxZ + 0.6 },
+  // Almoxarifado: parede da esquerda e do fundo.
+  { minX: ALMOXARIFADO.minX - FOLGA_PAREDE, maxX: ALMOXARIFADO.minX, minZ: LOJA.maxZ, maxZ: ALMOXARIFADO.maxZ + FOLGA_PAREDE },
+  { minX: ALMOXARIFADO.minX - FOLGA_PAREDE, maxX: ALMOXARIFADO.maxX + FOLGA_PAREDE, minZ: ALMOXARIFADO.maxZ, maxZ: ALMOXARIFADO.maxZ + FOLGA_PAREDE },
   ...Object.values(MOVEIS),
 ];
 
@@ -92,11 +113,12 @@ export const ALCANCE_ESTACAO = 1.7;
 const ESTACOES: Array<{ id: Estacao; rotulo: string; moveis: Retangulo[] }> = [
   { id: "balcao", rotulo: "Balcão de vendas", moveis: [MOVEIS.balcao] },
   {
-    id: "estoque",
-    rotulo: "Estoque",
-    moveis: [MOVEIS.ilhaEstoque, MOVEIS.prateleiraEsquerda, MOVEIS.prateleiraFundo],
+    id: "prateleira",
+    rotulo: "Prateleiras",
+    moveis: [MOVEIS.prateleiraEsquerda, MOVEIS.prateleiraFundo],
   },
   { id: "assistencia", rotulo: "Assistência técnica", moveis: [MOVEIS.bancada] },
+  { id: "almoxarifado", rotulo: "Almoxarifado", moveis: [MOVEIS.estanteAlmoxarifado] },
 ];
 
 // ---------------------------------------------------------------- pessoas

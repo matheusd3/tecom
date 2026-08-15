@@ -42,8 +42,11 @@ export interface GameHandle {
   getPlayerStation(): PlayerStation;
   getCarriedProduct(): ProductType | undefined;
   getCarriedRepairCustomerId(): string | undefined;
+  /** Caixa de reposição vinda do almoxarifado (não é venda, é abastecimento). */
+  getCarriedRestock(): ProductType | undefined;
   pickUpProduct(productType: ProductType): boolean;
   pickUpRepair(customerId: string): boolean;
+  pickUpRestock(productType: ProductType): boolean;
   putDownProduct(): void;
   setMobileMovement(x: number, z: number): void;
   dispose(): void;
@@ -92,8 +95,10 @@ export async function createGameScene(
     "camera",
     -Math.PI / 2,
     Math.PI / 3.55,
-    38,
-    new Vector3(-0.6, 2.2, 0.8),
+    // A loja ficou mais funda com o almoxarifado nos fundos; a câmera recuou o
+    // suficiente para a sala aparecer sem encolher o salão demais.
+    43,
+    new Vector3(-0.6, 2.2, 2.2),
     scene
   );
   camera.minZ = 0.5;
@@ -131,6 +136,8 @@ export async function createGameScene(
   // existe venda, e o aparelho só chega à bancada carregado por ele.
   let produtoCarregado: ProductType | undefined;
   let reparoCarregado: string | undefined;
+  let caixaCarregada: ProductType | undefined;
+  const maoOcupada = () => !!produtoCarregado || !!reparoCarregado || !!caixaCarregada;
 
   loja.destacarZona(jogador.estacao);
 
@@ -160,23 +167,37 @@ export async function createGameScene(
       return reparoCarregado;
     },
 
+    getCarriedRestock() {
+      return caixaCarregada;
+    },
+
     pickUpProduct(productType) {
-      if (produtoCarregado || reparoCarregado) return false;
+      if (maoOcupada()) return false;
       produtoCarregado = productType;
       jogador.definirCarga("produto", corDoProduto(productType));
       return true;
     },
 
     pickUpRepair(customerId) {
-      if (produtoCarregado || reparoCarregado) return false;
+      if (maoOcupada()) return false;
       reparoCarregado = customerId;
       jogador.definirCarga("aparelho");
+      return true;
+    },
+
+    pickUpRestock(productType) {
+      if (maoOcupada()) return false;
+      caixaCarregada = productType;
+      // Caixa fechada de almoxarifado: papelão, e não a cor do produto, para
+      // não confundir com o item que vai para o cliente.
+      jogador.definirCarga("caixa", "#c79a63");
       return true;
     },
 
     putDownProduct() {
       produtoCarregado = undefined;
       reparoCarregado = undefined;
+      caixaCarregada = undefined;
       jogador.definirCarga(null);
     },
 

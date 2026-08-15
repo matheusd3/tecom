@@ -114,6 +114,8 @@ export default function GameCanvas() {
       carriedProductName: (() => {
         const type = handleRef.current?.getCarriedProduct();
         if (type) return world.getState().products.get(type)?.name;
+        const restock = handleRef.current?.getCarriedRestock();
+        if (restock) return `caixa de ${world.getState().products.get(restock)?.name ?? "mercadoria"}`;
         const repairCustomerId = handleRef.current?.getCarriedRepairCustomerId();
         return repairCustomerId ? `aparelho de ${world.getState().customers.get(repairCustomerId)?.name ?? "cliente"}` : undefined;
       })(),
@@ -136,6 +138,7 @@ export default function GameCanvas() {
     const state = world.getState();
     const carriedRepairCustomerId = handle.getCarriedRepairCustomerId();
     const carriedProduct = handle.getCarriedProduct();
+    const carriedRestock = handle.getCarriedRestock();
     // A fila é a ordem de chegada; o cliente priorizado no painel vem antes.
     const aguardando = Array.from(state.customers.values()).filter(
       (item) => item.status === "waiting"
@@ -170,7 +173,26 @@ export default function GameCanvas() {
       } else {
         result = world.helpRepair();
       }
-    } else if (station === "estoque" && (carriedProduct || carriedRepairCustomerId)) {
+    } else if (station === "almoxarifado") {
+      // Sala dos fundos: aqui só se pega caixa para abastecer a prateleira.
+      if (carriedRepairCustomerId) {
+        result = { ok: false, message: "Aparelho de cliente não fica no almoxarifado: leve-o à bancada." };
+      } else if (carriedRestock) {
+        handle.putDownProduct();
+        result = { ok: true, message: "Caixa devolvida à estante." };
+      } else if (carriedProduct) {
+        result = { ok: false, message: "Você já está com um produto na mão. Leve-o ao balcão." };
+      } else {
+        const paraRepor = world.produtoParaRepor();
+        if (!paraRepor) {
+          result = { ok: false, message: "Almoxarifado vazio. Compre mercadoria no painel de estoque." };
+        } else {
+          handle.pickUpRestock(paraRepor);
+          const nome = state.products.get(paraRepor)?.name ?? "mercadoria";
+          result = { ok: true, message: `Caixa de ${nome} nas mãos. Leve até a prateleira.` };
+        }
+      }
+    } else if (station === "prateleira" && (carriedProduct || carriedRepairCustomerId || carriedRestock)) {
       // Devolver é o único jeito de destravar as mãos quando a venda não sai
       // (cliente dispensado, desconto recusado, item errado). Vem antes da
       // checagem de fila justamente porque costuma não haver mais ninguém.
@@ -179,6 +201,9 @@ export default function GameCanvas() {
           ok: false,
           message: "Isso é o aparelho de um cliente: leve-o à bancada técnica.",
         };
+      } else if (carriedRestock) {
+        result = world.restockShelf(carriedRestock);
+        if (result.ok) handle.putDownProduct();
       } else {
         const nome = carriedProduct ? state.products.get(carriedProduct)?.name : undefined;
         handle.putDownProduct();
@@ -186,7 +211,7 @@ export default function GameCanvas() {
       }
     } else if (!customer) {
       result = { ok: false, message: "Não há ninguém esperando para atender." };
-    } else if (station === "estoque") {
+    } else if (station === "prateleira") {
       if (!customer.needsProduct) {
         result = { ok: false, message: "Este cliente precisa ir para a bancada técnica, não para a prateleira." };
       } else if ((state.products.get(customer.needsProduct)?.stock ?? 0) <= 0) {
@@ -376,7 +401,7 @@ export default function GameCanvas() {
       if (!customer?.needsProduct) {
         return { ok: false, message: "Este cliente precisa da assistência técnica." };
       }
-      if (handle.getPlayerStation() === "estoque") {
+      if (handle.getPlayerStation() === "prateleira") {
         const naMao = handle.getCarriedProduct();
         if (naMao === customer.needsProduct) {
           return { ok: false, message: "Você já pegou o produto. Agora leve-o até o balcão." };

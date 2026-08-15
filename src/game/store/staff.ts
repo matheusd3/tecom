@@ -74,10 +74,16 @@ function pontoDaBancada(): Ponto {
   return { x: bancada.x + 2.4, z: MOVEIS.bancada.minZ - 1.3 };
 }
 
-/** Onde ele pega a mercadoria antes de fechar a venda. */
+/** Onde ele pega a mercadoria exposta antes de fechar a venda. */
 function pontoDaPrateleira(): Ponto {
-  const ilha = centro(MOVEIS.ilhaEstoque);
-  return { x: ilha.x + 1.6, z: MOVEIS.ilhaEstoque.minZ - 1.2 };
+  const prateleira = centro(MOVEIS.prateleiraFundo);
+  return { x: prateleira.x, z: MOVEIS.prateleiraFundo.minZ - 1.2 };
+}
+
+/** Estante dos fundos, de onde sai a caixa de reposição. */
+function pontoDoAlmoxarifado(): Ponto {
+  const estante = centro(MOVEIS.estanteAlmoxarifado);
+  return { x: estante.x, z: MOVEIS.estanteAlmoxarifado.minZ - 1.5 };
 }
 
 /**
@@ -89,6 +95,14 @@ function trajetoDaTarefa(tipo: Employee["currentTask"], posto: Ponto): Trecho[] 
     return [
       { destino: pontoDaPrateleira(), carga: null },
       { destino: posto, carga: "produto" },
+    ];
+  }
+  if (tipo === "repor") {
+    // Vai vazio até os fundos, volta com a caixa e passa na prateleira.
+    return [
+      { destino: pontoDoAlmoxarifado(), carga: null },
+      { destino: pontoDaPrateleira(), carga: "caixa" },
+      { destino: posto, carga: null },
     ];
   }
   if (tipo === "trazerReparo") {

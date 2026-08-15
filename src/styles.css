@@ -1051,6 +1051,72 @@ button {
   border-color: var(--lima);
 }
 
+/* ---------- Ficha compacta do cliente ---------- */
+
+/* Substitui as caixas de KPI dentro do posto: mesma informação, um terço da
+   altura, para o cartão não comer a loja. */
+.ficha {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+  margin: 0 0 10px;
+}
+
+.ficha__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid rgba(0, 229, 255, 0.12);
+}
+
+.ficha dt {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--texto-fraco);
+}
+
+.ficha dd {
+  margin: 0;
+  font-family: Orbitron, monospace;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.entrada--oferta {
+  width: 96px;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn--fechar {
+  flex: 1;
+  font-family: Orbitron, monospace;
+  letter-spacing: 0.6px;
+}
+
+.posto__acoes {
+  align-items: center;
+}
+
+/* No cartão do palco o posto inteiro fica mais enxuto. */
+.palco__card .posto__historia {
+  margin-bottom: 8px;
+  padding: 6px 9px;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.palco__card .posto__paciencia {
+  margin-bottom: 9px;
+}
+
+.palco__card .palco__etiqueta {
+  margin-bottom: 0;
+}
+
 /* ---------- Aprovação de desconto ---------- */
 
 .aprovacao {

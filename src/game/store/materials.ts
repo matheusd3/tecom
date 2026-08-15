@@ -32,10 +32,14 @@ export const PALETA = {
   vidro: "#bfe9f5",
 } as const;
 
-export const COR_ESTACAO: Record<"balcao" | "estoque" | "assistencia", string> = {
+export const COR_ESTACAO: Record<
+  "balcao" | "prateleira" | "assistencia" | "almoxarifado",
+  string
+> = {
   balcao: PALETA.ciano,
-  estoque: PALETA.lima,
+  prateleira: PALETA.lima,
   assistencia: PALETA.magenta,
+  almoxarifado: PALETA.ambar,
 };
 
 /** Cores das caixas de produto nas prateleiras. */

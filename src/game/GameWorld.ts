@@ -25,6 +25,16 @@ const SHIFT_DURATION = 120;
  * cliente ainda estava atravessando a loja.
  */
 const CUSTOMER_WALK_IN_SECONDS = 2.5;
+/**
+ * Teto de contratação por função. A loja é pequena: sem limite, dava para
+ * comprar a fila inteira de funcionários e o turno se resolvia sozinho.
+ * O vendedor inicial é o próprio jogador e fica fora da conta.
+ */
+const LIMITE_EQUIPE: Record<EmployeeRole, number> = {
+  seller: 2,
+  technician: 3,
+  manager: 1,
+};
 /** Preço de vitrine não passa disso vezes o valor de mercado do produto. */
 const PRICE_CEILING_FACTOR = 2.5;
 /** Quanto cada ajuda do jogador tira do prazo do conserto. */
@@ -149,7 +159,17 @@ export class GameWorld {
     return this.shiftReport;
   }
 
+  /** Quantos ainda cabem na equipe. O jogador é o vendedor da casa e não conta. */
+  public vagasRestantes(role: EmployeeRole): number {
+    const limite = LIMITE_EQUIPE[role];
+    const contratados = Array.from(this.state.employees.values()).filter(
+      (employee) => employee.role === role && employee.id !== "seller-1"
+    ).length;
+    return Math.max(0, limite - contratados);
+  }
+
   public hireEmployee(role: EmployeeRole, name: string): boolean {
+    if (this.vagasRestantes(role) === 0) return false;
     const salary = role === "seller" ? 2_000 : role === "technician" ? 2_500 : 3_000;
     const onboardingCost = salary * 2;
     if (this.state.cash < onboardingCost) return false;
@@ -169,6 +189,7 @@ export class GameWorld {
     return true;
   }
 
+  /** A compra chega no ALMOXARIFADO. Da prateleira só sai o que alguém repôs. */
   public buyStock(productType: ProductType, quantity: number): boolean {
     const product = this.state.products.get(productType);
     const amount = Math.max(0, Math.floor(quantity));
@@ -176,10 +197,46 @@ export class GameWorld {
     const cost = product.costPrice * amount;
     if (this.state.cash < cost) return false;
 
-    product.stock += amount;
+    product.storage += amount;
     product.lastRestockedAt = this.state.time;
     this.recordExpense(cost);
     return true;
+  }
+
+  /** Quantas unidades cabem numa viagem do almoxarifado até a prateleira. */
+  public static readonly CAIXA_DE_REPOSICAO = 5;
+
+  /** O que falta na prateleira e existe no almoxarifado — o que vale buscar. */
+  public produtoParaRepor(): ProductType | undefined {
+    let escolhido: Product | undefined;
+    for (const product of this.state.products.values()) {
+      if (product.storage <= 0) continue;
+      // Prioriza o que está mais vazio na prateleira; empate vai para a demanda.
+      if (
+        !escolhido ||
+        product.stock < escolhido.stock ||
+        (product.stock === escolhido.stock && product.demand > escolhido.demand)
+      ) {
+        escolhido = product;
+      }
+    }
+    return escolhido?.type;
+  }
+
+  /** Move uma caixa do almoxarifado para a prateleira. */
+  public restockShelf(productType: ProductType, quantity = GameWorld.CAIXA_DE_REPOSICAO): ActionResult {
+    const product = this.state.products.get(productType);
+    if (!product) return { ok: false, message: "Produto desconhecido." };
+    if (product.storage <= 0) {
+      return { ok: false, message: `Não há ${product.name} no almoxarifado. Compre no painel de estoque.` };
+    }
+    const movidas = Math.min(product.storage, Math.max(1, Math.floor(quantity)));
+    product.storage -= movidas;
+    product.stock += movidas;
+    return {
+      ok: true,
+      message: `${movidas} ${product.name} na prateleira (${product.storage} no almoxarifado).`,
+    };
   }
 
   /** Teto de preço: acima disso nenhum cliente compraria mesmo, e o número só
@@ -214,7 +271,15 @@ export class GameWorld {
     const seller = escolhido && !escolhido.isBusy ? escolhido : undefined;
     if (!seller) return { ok: false, message: "Todos os vendedores estão ocupados." };
     const product = this.state.products.get(customer.needsProduct);
-    if (!product || product.stock <= 0) return { ok: false, message: "O produto está sem estoque." };
+    if (!product) return { ok: false, message: "Produto desconhecido." };
+    if (product.stock <= 0) {
+      return {
+        ok: false,
+        message: product.storage > 0
+          ? `Prateleira vazia: há ${product.storage} ${product.name} no almoxarifado para repor.`
+          : `Sem ${product.name} na prateleira nem no almoxarifado.`,
+      };
+    }
     const price = Math.round(offeredPrice * 100) / 100;
     if (price < product.costPrice) return { ok: false, message: "Essa oferta fica abaixo do custo." };
     if (price > customer.budget) return { ok: false, message: "O cliente não aceita esse valor." };
@@ -398,6 +463,8 @@ export class GameWorld {
       products.set(type, {
         id: `product-${type}`, type, name, basePrice,
         costPrice: basePrice * 0.6, sellingPrice: basePrice * 1.25, stock,
+        // A loja abre com uma reserva nos fundos; o resto é decisão de compra.
+        storage: stock * 2,
         demand: this.randomBetween(35, 75), repairRate: type === "notebook" || type === "monitor" ? 25 : 8,
         unitsSold: 0, lastRestockedAt: 0,
       });
@@ -600,6 +667,18 @@ export class GameWorld {
       ocupar(`${helper.name} devolveu um reparo pronto ao balcão.`, "trazerReparo");
       return true;
     }
+
+    // Sem cliente para atender, o auxiliar abastece a prateleira. É a tarefa de
+    // menor prioridade: atender vem antes de arrumar.
+    const paraRepor = this.produtoParaRepor();
+    if (paraRepor && (this.state.products.get(paraRepor)?.stock ?? 0) < 6) {
+      const resultado = this.restockShelf(paraRepor);
+      if (resultado.ok) {
+        const nome = this.state.products.get(paraRepor)?.name ?? "mercadoria";
+        ocupar(`${helper.name} repôs ${nome} na prateleira.`, "repor");
+        return true;
+      }
+    }
     return false;
   }
 
@@ -696,9 +775,22 @@ export class GameWorld {
   private analyzeOpportunities(): void {
     for (const product of this.state.products.values()) {
       if (product.stock <= 2 && product.demand >= 55) {
-        this.addOpportunity(`stock-${product.type}`, "stock", `Estoque baixo: ${product.name}`,
-          `${product.stock} unidade(s) para uma demanda de ${Math.round(product.demand)}%.`, product.sellingPrice * 4,
-          "high", `Compre 5 unidades de ${product.name} para evitar vendas perdidas.`);
+        // Prateleira vazia com caixa cheia no almoxarifado é problema de
+        // reposição, não de compra: a recomendação precisa dizer isso.
+        const temNoAlmoxarifado = product.storage > 0;
+        this.addOpportunity(
+          `stock-${product.type}`,
+          "stock",
+          temNoAlmoxarifado ? `Prateleira vazia: ${product.name}` : `Estoque baixo: ${product.name}`,
+          temNoAlmoxarifado
+            ? `${product.stock} na prateleira e ${product.storage} parado(s) no almoxarifado, com demanda de ${Math.round(product.demand)}%.`
+            : `${product.stock} unidade(s) e nada no almoxarifado, para uma demanda de ${Math.round(product.demand)}%.`,
+          product.sellingPrice * 4,
+          "high",
+          temNoAlmoxarifado
+            ? `Vá ao almoxarifado, pegue uma caixa de ${product.name} e reponha a prateleira.`
+            : `Compre ${product.name} no painel: a mercadoria chega no almoxarifado.`
+        );
       }
       if (product.stock >= 10 && product.unitsSold === 0 && this.state.time - product.lastRestockedAt > 300) {
         this.addOpportunity(`pricing-${product.type}`, "pricing", `${product.name} está parado no estoque`,

@@ -20,7 +20,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 
 import { PALETA, cor, fosco, materialIcone, neon } from "./materials";
 
-export type TipoCarga = "produto" | "aparelho";
+export type TipoCarga = "produto" | "aparelho" | "caixa";
 export type TipoPedido = "produto" | "reparo";
 
 export interface OpcoesPersonagem {
