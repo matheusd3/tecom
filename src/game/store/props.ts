@@ -426,13 +426,13 @@ function bancadaTecnica(
     scene,
     "bancada-pegboard",
     { l: largura(r) - 0.8, a: 2.4, p: 0.12 },
-    { x: c.x, y: 3, z: r.maxZ - 0.1 },
+    { x: c.x, y: 3, z: LOJA.maxZ - 0.1 },
     mats.madeiraEscura
   );
   pegboard.freezeWorldMatrix();
   const ferramenta = (nome: string, x: number, y: number, alturaF: number, diametro: number) => {
     const f = CreateCylinder(nome, { diameter: diametro, height: alturaF }, scene);
-    f.position.set(x, y, r.maxZ - 0.22);
+    f.position.set(x, y, LOJA.maxZ - 0.22);
     f.material = mats.metal;
     f.freezeWorldMatrix();
   };
@@ -454,14 +454,14 @@ function bancadaTecnica(
 
   // Letreiro "ASSISTÊNCIA" na parede do fundo, acima do painel de ferramentas.
   const placa = CreatePlane("placaAssistencia", { width: 5, height: 1.4 }, scene);
-  placa.position.set(c.x, 5.2, r.maxZ - 0.06);
+  placa.position.set(c.x, 5.2, LOJA.maxZ - 0.06);
   placa.material = materialPlaca(scene, "placaAssistencia", "ASSISTÊNCIA", "#0d1a22", PALETA.magenta);
   placa.freezeWorldMatrix();
   const moldura = bloco(
     scene,
     "placaAssistencia-moldura",
     { l: 5.4, a: 0.14, p: 0.14 },
-    { x: c.x, y: 4.4, z: r.maxZ - 0.12 },
+    { x: c.x, y: 4.4, z: LOJA.maxZ - 0.12 },
     neon(scene, "matPlacaAssistNeon", PALETA.magenta, 1.05)
   );
   letreiros.set("assistencia", moldura.material as StandardMaterial);

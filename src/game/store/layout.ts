@@ -47,8 +47,12 @@ export const MOVEIS = {
   prateleiraEsquerda: { minX: -11, maxX: -9.6, minZ: -2, maxZ: 8 } as Retangulo,
   /** Prateleira alta encostada na parede do fundo. */
   prateleiraFundo: { minX: -11, maxX: 2, minZ: 10.4, maxZ: 11.5 } as Retangulo,
-  /** Bancada da assistência, no canto do fundo à direita. */
-  bancada: { minX: 4.5, maxX: 11, minZ: 9.6, maxZ: 11.5 } as Retangulo,
+  /**
+   * Bancada da assistência, no canto do fundo à direita. Ela para antes da
+   * parede: a faixa que sobra atrás é onde o técnico trabalha, como em loja de
+   * verdade — cliente e atendente ficam do lado de cá.
+   */
+  bancada: { minX: 4.5, maxX: 11, minZ: 8.8, maxZ: 10.2 } as Retangulo,
   /** Pilha de caixas de entrega. */
   caixasEntrega: { minX: 9.4, maxX: 11, minZ: 0.4, maxZ: 2.6 } as Retangulo,
   /** Cantinho de espera (pufes e mesinha) no meio do salão. */
@@ -57,14 +61,21 @@ export const MOVEIS = {
   plantaDireita: { minX: 9.6, maxX: 11, minZ: -11.5, maxZ: -10.1 } as Retangulo,
 };
 
-/** Tudo que o atendente não atravessa: paredes + móveis. */
+/**
+ * Tudo que o atendente não atravessa: paredes + móveis.
+ *
+ * As paredes são derivadas de LOJA de propósito. Quando a planta encolheu, os
+ * colisores ficaram para trás nas medidas antigas e dava para andar para fora
+ * das paredes desenhadas — agora eles não têm como divergir.
+ */
+const FOLGA_PAREDE = 2;
 export const COLISORES: Retangulo[] = [
-  // Paredes (com folga para fora da área útil).
-  { minX: -17, maxX: 17, minZ: 11.5, maxZ: 13 },
-  { minX: -17, maxX: -15.5, minZ: -13, maxZ: 13 },
-  { minX: 15.5, maxX: 17, minZ: -13, maxZ: 13 },
-  { minX: -17, maxX: PORTA.minX, minZ: -13, maxZ: -11.5 },
-  { minX: PORTA.maxX, maxX: 17, minZ: -13, maxZ: -11.5 },
+  { minX: LOJA.minX - FOLGA_PAREDE, maxX: LOJA.maxX + FOLGA_PAREDE, minZ: LOJA.maxZ, maxZ: LOJA.maxZ + FOLGA_PAREDE },
+  { minX: LOJA.minX - FOLGA_PAREDE, maxX: LOJA.minX, minZ: LOJA.minZ - FOLGA_PAREDE, maxZ: LOJA.maxZ + FOLGA_PAREDE },
+  { minX: LOJA.maxX, maxX: LOJA.maxX + FOLGA_PAREDE, minZ: LOJA.minZ - FOLGA_PAREDE, maxZ: LOJA.maxZ + FOLGA_PAREDE },
+  // A frente é fechada inteira, inclusive o vão da porta: o cliente entra por
+  // ali porque clientes não colidem, mas o atendente não sai da loja.
+  { minX: LOJA.minX - FOLGA_PAREDE, maxX: LOJA.maxX + FOLGA_PAREDE, minZ: LOJA.minZ - FOLGA_PAREDE, maxZ: LOJA.minZ },
   ...Object.values(MOVEIS),
 ];
 

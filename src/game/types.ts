@@ -40,6 +40,12 @@ export interface Employee {
   happiness: number;
   isBusy: boolean;
   busyUntil: number;
+  /**
+   * Tarefa que este funcionário está executando agora. É por funcionário (e não
+   * uma só no estado) porque vários auxiliares podem estar em tarefas
+   * diferentes ao mesmo tempo, e a cena precisa animar o trajeto de cada um.
+   */
+  currentTask?: "venda" | "levarReparo" | "trazerReparo";
 }
 
 export interface Customer {

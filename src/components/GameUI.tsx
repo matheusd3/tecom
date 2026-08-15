@@ -151,6 +151,12 @@ const numero = (valor: number | undefined, padrao = 0) =>
 
 const faseDe = (fase: GamePhase | undefined): GamePhase => fase ?? "planning";
 
+/**
+ * Espelha o teto do núcleo (2,5× o valor de mercado). Serve só para o campo e a
+ * mensagem: quem recusa o preço continua sendo o GameWorld.
+ */
+const tetoDePreco = (produto: Product) => Math.round(produto.basePrice * 2.5 * 100) / 100;
+
 function relogioTurno(segundos: number): string {
   const total = Math.max(0, Math.ceil(segundos));
   const m = Math.floor(total / 60);
@@ -315,19 +321,21 @@ export function GameUI(props: GameUIProps) {
     );
   };
 
-  const aplicarPreco = (tipo: ProductType, nome: string, custoUnitario: number) => {
-    const texto = (rascunhoPreco[tipo] ?? "").replace(",", ".");
+  const aplicarPreco = (produto: Product) => {
+    const texto = (rascunhoPreco[produto.type] ?? "").replace(",", ".");
     const valor = Number(texto);
     if (!texto || !Number.isFinite(valor)) {
       setAviso({ texto: "Informe um preço válido.", tipo: "erro" });
       return;
     }
-    if (props.onSetPrice(tipo, valor)) {
-      setRascunhoPreco((atual) => ({ ...atual, [tipo]: undefined }));
-      setAviso({ texto: `${nome} agora custa ${formatarMoeda(valor)}`, tipo: "ok" });
+    if (props.onSetPrice(produto.type, valor)) {
+      setRascunhoPreco((atual) => ({ ...atual, [produto.type]: undefined }));
+      setAviso({ texto: `${produto.name} agora custa ${formatarMoeda(valor)}`, tipo: "ok" });
     } else {
       setAviso({
-        texto: `Preço recusado: precisa ser no mínimo o custo (${formatarMoeda(custoUnitario)}).`,
+        texto: `Preço recusado: fica entre ${formatarMoeda(produto.costPrice)} e ${formatarMoeda(
+          tetoDePreco(produto)
+        )} — acima disso ninguém compra.`,
         tipo: "erro",
       });
     }
@@ -720,13 +728,13 @@ export function GameUI(props: GameUIProps) {
                         }))
                       }
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") aplicarPreco(p.type, p.name, p.costPrice);
+                        if (e.key === "Enter") aplicarPreco(p);
                       }}
                     />
                     <button
                       className="btn btn--pequeno"
                       disabled={rascunho === undefined}
-                      onClick={() => aplicarPreco(p.type, p.name, p.costPrice)}
+                      onClick={() => aplicarPreco(p)}
                     >
                       Aplicar
                     </button>

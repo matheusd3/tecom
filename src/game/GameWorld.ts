@@ -25,6 +25,8 @@ const SHIFT_DURATION = 120;
  * cliente ainda estava atravessando a loja.
  */
 const CUSTOMER_WALK_IN_SECONDS = 2.5;
+/** Preço de vitrine não passa disso vezes o valor de mercado do produto. */
+const PRICE_CEILING_FACTOR = 2.5;
 /** Quanto cada ajuda do jogador tira do prazo do conserto. */
 const REPAIR_HELP_SECONDS = 7;
 /** Intervalo mínimo entre duas ajudas, para E repetido não zerar o reparo. */
@@ -51,6 +53,7 @@ export class GameWorld {
   private shiftReport: ShiftReport | null = null;
   private customerSequence = 0;
   private lastRepairHelpAt = -Infinity;
+  private supportRotation = 0;
   private shiftHighlights: string[] = [];
   private supportAttendantTimer = 0;
 
@@ -179,9 +182,17 @@ export class GameWorld {
     return true;
   }
 
+  /** Teto de preço: acima disso nenhum cliente compraria mesmo, e o número só
+   *  serviria para estourar a interface. */
+  public precoMaximo(productType: ProductType): number {
+    const product = this.state.products.get(productType);
+    return product ? Math.round(product.basePrice * PRICE_CEILING_FACTOR * 100) / 100 : 0;
+  }
+
   public setProductPrice(productType: ProductType, newPrice: number): boolean {
     const product = this.state.products.get(productType);
     if (!product || !Number.isFinite(newPrice) || newPrice < product.costPrice) return false;
+    if (newPrice > this.precoMaximo(productType)) return false;
     product.sellingPrice = Math.round(newPrice * 100) / 100;
     return true;
   }
@@ -428,11 +439,13 @@ export class GameWorld {
       id, name, satisfaction: 55,
       needsProduct: wantsProduct ? type : undefined,
       needsService: wantsProduct ? undefined : "repair",
-      // O orçamento é o máximo que o cliente aceita pagar pelo item pedido.
-      // Variar em torno do preço de vitrine cria negociações plausíveis para
-      // acessórios baratos e também para notebooks, sem misturar as faixas.
+      // O orçamento é o máximo que o cliente aceita pagar, e ele se ancora no
+      // VALOR DE MERCADO do item (basePrice), não no preço que a loja pediu.
+      // Seguir a vitrine transformava preço alto em dinheiro grátis: bastava
+      // pedir 1e+106 que o cliente aceitava. Agora subir o preço afasta
+      // compradores, que é o trade-off que a decisão de preço deveria ter.
       budget: wantsProduct
-        ? Math.round(product.sellingPrice * (1 - couponDiscount + influencerBoost) * this.randomBetween(0.78, 1.18) * 100) / 100
+        ? Math.round(product.basePrice * (1 - couponDiscount + influencerBoost) * this.randomBetween(0.95, 1.6) * 100) / 100
         : 0,
       patience: trait === "panicked" ? this.randomBetween(38, 62) : this.randomBetween(55, 100), arrivalTime: this.state.time, status: "waiting",
       urgency: Math.random() < 0.22 ? "high" : Math.random() < 0.55 ? "medium" : "low",
@@ -498,12 +511,29 @@ export class GameWorld {
     this.supportAttendantTimer += elapsed;
     if (this.supportAttendantTimer < 7) return;
     this.supportAttendantTimer = 0;
-    const helper = attendants.find((employee) => !employee.isBusy && employee.id !== "seller-1") ?? attendants[1];
-    if (!helper || helper.isBusy) return;
 
-    const ocupar = (tarefa: string, tipo: NonNullable<GameState["supportTaskKind"]>) => {
+    // Cada auxiliar livre pega a própria tarefa nesta rodada. Antes só o
+    // primeiro trabalhava: contratar o terceiro não mudava nada na loja.
+    // O rodízio importa quando há menos tarefa que gente — sem ele o primeiro
+    // da lista pegava tudo e os outros pareciam enfeite.
+    const auxiliares = attendants.filter((employee) => employee.id !== "seller-1");
+    this.supportRotation = (this.supportRotation + 1) % Math.max(1, auxiliares.length);
+    const ordem = [
+      ...auxiliares.slice(this.supportRotation),
+      ...auxiliares.slice(0, this.supportRotation),
+    ];
+    for (const helper of ordem) {
+      if (helper.isBusy) continue;
+      this.darTarefaAoAuxiliar(helper);
+    }
+  }
+
+  /** Uma tarefa para um auxiliar livre. Devolve false se não havia o que fazer. */
+  private darTarefaAoAuxiliar(helper: Employee): boolean {
+    const ocupar = (tarefa: string, tipo: NonNullable<Employee["currentTask"]>) => {
       helper.isBusy = true;
       helper.busyUntil = this.state.time + 4;
+      helper.currentTask = tipo;
       this.state.supportTask = tarefa;
       this.state.supportTaskKind = tipo;
     };
@@ -523,7 +553,7 @@ export class GameWorld {
       const resultado = this.sellToCustomer(vendaDireta.id, product.sellingPrice, helper.id);
       if (resultado.ok) {
         ocupar(`${helper.name} vendeu ${product.name} no balcão.`, "venda");
-        return;
+        return true;
       }
     }
 
@@ -548,7 +578,7 @@ export class GameWorld {
         };
         this.state.supportTask = `${helper.name} pediu aprovação de desconto em ${product.name}.`;
         this.state.supportTaskKind = undefined;
-        return;
+        return true;
       }
     }
 
@@ -559,14 +589,25 @@ export class GameWorld {
       this.receiveRepair(waitingRepair.id);
       this.acceptRepair(waitingRepair.id);
       ocupar(`${helper.name} levou um aparelho para a assistência.`, "levarReparo");
-      return;
+      return true;
     }
-    const readyRepair = this.state.repairs.find((repair) => repair.status === "ready");
+    const readyRepair = this.state.repairs.find(
+      (repair) => repair.status === "ready" && !this.reparoJaEmMaos(repair.customerId)
+    );
     if (readyRepair) {
       this.collectCompletedRepair(readyRepair.customerId);
       this.returnRepairToCustomer(readyRepair.customerId);
       ocupar(`${helper.name} devolveu um reparo pronto ao balcão.`, "trazerReparo");
+      return true;
     }
+    return false;
+  }
+
+  /** Evita dois auxiliares saindo atrás do mesmo aparelho na mesma rodada. */
+  private reparoJaEmMaos(customerId: string): boolean {
+    return this.state.repairs.some(
+      (repair) => repair.customerId === customerId && repair.status === "returning"
+    );
   }
 
   /** O cliente só pode ser atendido depois de atravessar a loja. */
@@ -576,7 +617,10 @@ export class GameWorld {
 
   private releaseFinishedEmployees(): void {
     for (const employee of this.state.employees.values()) {
-      if (employee.role !== "technician" && employee.isBusy && employee.busyUntil <= this.state.time) employee.isBusy = false;
+      if (employee.role !== "technician" && employee.isBusy && employee.busyUntil <= this.state.time) {
+        employee.isBusy = false;
+        employee.currentTask = undefined;
+      }
       if (!employee.isBusy) this.state.idleEmployeeTime += this.state.timeSpeed;
     }
   }

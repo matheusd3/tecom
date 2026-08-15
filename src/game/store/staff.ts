@@ -59,10 +59,13 @@ function postoDeVendedor(indice: number): Posto {
   return { ponto: { x: balcao.maxX - 1.2 - indice * 2, z: balcao.maxZ + 1.2 }, giro: Math.PI };
 }
 
-/** Vagas na frente da bancada técnica. */
+/** Vagas ATRÁS da bancada, entre ela e a parede: o lado de quem conserta. */
 function postoDeTecnico(indice: number): Posto {
   const bancada = centro(MOVEIS.bancada);
-  return { ponto: { x: bancada.x - 2 + indice * 2, z: MOVEIS.bancada.minZ - 1.3 }, giro: 0 };
+  return {
+    ponto: { x: bancada.x - 2 + indice * 2, z: MOVEIS.bancada.maxZ + 0.65 },
+    giro: Math.PI,
+  };
 }
 
 /** Onde o auxiliar entrega e retira aparelhos. */
@@ -81,10 +84,7 @@ function pontoDaPrateleira(): Ponto {
  * O trajeto de cada tarefa. Vender é ir buscar na prateleira e voltar com o
  * produto; reparo é ida e volta até a bancada, com o aparelho na perna certa.
  */
-function trajetoDaTarefa(
-  tipo: GameState["supportTaskKind"],
-  posto: Ponto
-): Trecho[] {
+function trajetoDaTarefa(tipo: Employee["currentTask"], posto: Ponto): Trecho[] {
   if (tipo === "venda") {
     return [
       { destino: pontoDaPrateleira(), carga: null },
@@ -181,7 +181,9 @@ export function criarEquipe(fabrica: FabricaDePessoas, world: { getState(): Game
           // O núcleo marca o auxiliar como ocupado no instante em que resolve a
           // tarefa; essa borda é o gatilho do trajeto correspondente.
           if (employee.isBusy && !membro.ocupadoAntes && membro.trajeto.length === 0) {
-            membro.trajeto = trajetoDaTarefa(estado.supportTaskKind, posto.ponto);
+            // A tarefa vem do próprio funcionário: com dois ou três auxiliares
+            // trabalhando ao mesmo tempo, cada um anda o seu trajeto.
+            membro.trajeto = trajetoDaTarefa(employee.currentTask, posto.ponto);
             membro.personagem.definirCarga(membro.trajeto[0].carga);
           }
           membro.ocupadoAntes = employee.isBusy;
