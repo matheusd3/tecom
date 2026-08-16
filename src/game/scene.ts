@@ -167,8 +167,12 @@ export async function createGameScene(
 
     update(deltaSeconds: number) {
       world.update(deltaSeconds);
-      jogador.atualizar(deltaSeconds);
       const estado = world.getState();
+      // Turno pausado congela a loja inteira, o atendente inclusive. Sem isso
+      // dava para pausar o relógio e continuar andando e atendendo a fila —
+      // paciência congelada, venda liberada.
+      const dt = estado.isPaused && estado.phase === "active" ? 0 : deltaSeconds;
+      jogador.atualizar(dt);
       if (estado.sales.length > vendasVistas) {
         const venda = estado.sales[estado.sales.length - 1];
         mostrarDinheiro(`+R$ ${venda.price.toFixed(0)}`);
@@ -180,13 +184,14 @@ export async function createGameScene(
         reparosVistos = concluidos.length;
       }
       for (let i = popups.length - 1; i >= 0; i--) {
-        const popup = popups[i]; popup.idade += deltaSeconds; popup.mesh.position.y += deltaSeconds * 1.5; popup.material.alpha = Math.max(0, 1 - popup.idade);
+        const popup = popups[i]; popup.idade += dt; popup.mesh.position.y += dt * 1.5; popup.material.alpha = Math.max(0, 1 - popup.idade);
         if (popup.idade > 1) { popup.mesh.dispose(); popup.material.dispose(); popups.splice(i, 1); }
       }
       multidao.sincronizar(estado);
-      multidao.atualizar(deltaSeconds);
-      equipe.atualizar(deltaSeconds);
+      multidao.atualizar(dt);
+      equipe.atualizar(dt);
       loja.atualizarPilhas(estado);
+      loja.atualizarBebedouro(estado.nivelDoBebedouro);
     },
 
     getPlayerStation() {

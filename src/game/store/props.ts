@@ -18,7 +18,7 @@ import "@babylonjs/core/Meshes/instancedMesh";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 
-import type { GameState } from "../types";
+import { GOLES_BEBEDOURO, type GameState } from "../types";
 import {
   ALMOXARIFADO,
   ALTURA_PAREDE,
@@ -50,6 +50,8 @@ export interface Loja {
   destacarZona(estacao: Estacao | null): void;
   /** Mostra no chão da bancada quantos aparelhos esperam e quantos ficaram prontos. */
   atualizarPilhas(estado: GameState): void;
+  /** Acerta a coluna de água e a régua do piso com os goles que restam. */
+  atualizarBebedouro(nivel: number): void;
 }
 
 interface Tapete {
@@ -154,12 +156,13 @@ export function construirLoja(scene: Scene): Loja {
   balcao(scene, mats, letreiros);
   bancadaTecnica(scene, mats, letreiros);
   estoque(scene, mats, letreiros);
-  bebedouro(scene, mats, letreiros);
+  const galao = bebedouro(scene, mats, letreiros);
   decoracao(scene, mats);
   const pilhas = pilhasDeReparo(scene);
 
   return {
     atualizarPilhas: pilhas.atualizar,
+    atualizarBebedouro: galao.atualizar,
 
     destacarZona(estacao) {
       for (const [id, tapete] of tapetes) {
@@ -174,20 +177,114 @@ export function construirLoja(scene: Scene): Loja {
   };
 }
 
-/** Baixo e compacto: fica no salão sem bloquear o piso para a câmera fixa. */
-function bebedouro(scene: Scene, mats: Materiais, letreiros: Map<Estacao, StandardMaterial>): void {
+/**
+ * Ponto de água. Ele foi refeito para ser lido de longe nesta câmera, que olha
+ * a loja de cima e bem inclinada:
+ *
+ *  - ganha presença em PEGADA, não em altura — nada aqui passa de 1,28, senão
+ *    apagaria a faixa de piso logo atrás (ver armadilha 1 do FASE3);
+ *  - o corpo é escuro sobre o piso claro, para a silhueta aparecer de cima;
+ *  - o nível do galão é redundante: a coluna de água no reservatório e uma
+ *    régua de 8 casas deitada no chão, que é o que se enxerga à distância.
+ */
+function bebedouro(
+  scene: Scene,
+  mats: Materiais,
+  letreiros: Map<Estacao, StandardMaterial>
+): { atualizar(nivel: number): void } {
   const r = MOVEIS.bebedouro;
   const c = centro(r);
-  bloco(scene, "bebedouro-base", { l: 1.2, a: 0.86, p: 0.9 }, { x: c.x, y: 0.43, z: c.z }, mats.branco);
-  const galao = CreateCylinder("bebedouro-galao", { diameter: 0.7, height: 0.38 }, scene);
-  galao.position.set(c.x, 1.05, c.z);
-  galao.material = mats.vidro;
-  galao.freezeWorldMatrix();
-  const torneira = CreateBox("bebedouro-torneira", { width: 0.16, height: 0.12, depth: 0.16 }, scene);
-  torneira.position.set(c.x, 0.68, c.z - 0.48);
+
+  // Plataforma escura ocupando o retângulo inteiro: é ela que dá o contorno
+  // reconhecível visto de cima, e 0,16 de altura não esconde piso nenhum.
+  blocoDoRetangulo(scene, "bebedouro-plataforma", r, 0.16, 0, mats.metalEscuro);
+  // Friso de neon na borda da frente — é também o letreiro que acende quando o
+  // atendente chega. Material próprio: usar o neon compartilhado acendia junto
+  // o friso do balcão.
+  const friso = bloco(
+    scene,
+    "bebedouro-friso",
+    { l: largura(r), a: 0.1, p: 0.16 },
+    { x: c.x, y: 0.05, z: r.minZ - 0.08 },
+    neon(scene, "matBebedouroNeon", PALETA.ciano, 1.05)
+  );
+  letreiros.set("bebedouro", friso.material as StandardMaterial);
+
+  // Gabinete encostado no fundo da plataforma, deixando a frente livre para o
+  // atendente parar e para a régua de nível.
+  // Encostado à direita, mas com o tampo inteiro dentro do retângulo: passar de
+  // 11 enfiava a quina do móvel dentro da parede.
+  const xGabinete = c.x + 0.18;
+  const zGabinete = r.maxZ - 0.9;
+  bloco(scene, "bebedouro-corpo", { l: 1.25, a: 0.56, p: 1.5 }, { x: xGabinete, y: 0.44, z: zGabinete }, mats.preto);
+  bloco(scene, "bebedouro-tampo", { l: 1.4, a: 0.09, p: 1.62 }, { x: xGabinete, y: 0.765, z: zGabinete }, mats.branco);
+  const torneira = CreateBox("bebedouro-torneira", { width: 0.2, height: 0.16, depth: 0.22 }, scene);
+  torneira.position.set(xGabinete, 0.62, zGabinete - 0.8);
   torneira.material = mats.neonCiano;
   torneira.freezeWorldMatrix();
-  letreiros.set("bebedouro", mats.neonCiano);
+  // Pinguinho de água caindo da torneira: um ponto de cor que denuncia o móvel.
+  const pia = CreateBox("bebedouro-pia", { width: 0.5, height: 0.05, depth: 0.3 }, scene);
+  pia.position.set(xGabinete, 0.19, zGabinete - 0.85);
+  pia.material = mats.metal;
+  pia.freezeWorldMatrix();
+
+  // Reservatório em cima do gabinete: 0,81 a 1,28 de altura.
+  const tanque = CreateCylinder("bebedouro-galao", { diameter: 0.86, height: 0.47 }, scene);
+  tanque.position.set(xGabinete, 1.045, zGabinete);
+  tanque.material = mats.vidro;
+  tanque.freezeWorldMatrix();
+  const tampa = CreateCylinder("bebedouro-tampa", { diameter: 0.34, height: 0.06 }, scene);
+  tampa.position.set(xGabinete, 1.31, zGabinete);
+  tampa.material = mats.neonCiano;
+  tampa.freezeWorldMatrix();
+
+  const matAgua = neon(scene, "matBebedouroAgua", "#3fd8ff", 0.95, 0.85);
+  const ALTURA_AGUA = 0.4;
+  const BASE_AGUA = 0.83;
+  const agua = CreateCylinder("bebedouro-agua", { diameter: 0.74, height: ALTURA_AGUA }, scene);
+  agua.material = matAgua;
+
+  // Régua de nível deitada no piso, ao longo da borda esquerda da plataforma:
+  // oito casas grandes e chapadas. Deitada não esconde nada e é o único jeito
+  // de o nível se ler do outro lado do salão.
+  const matCheio = neon(scene, "matBebedouroCasaCheia", PALETA.ciano, 1.2);
+  const matVazio = fosco(scene, "matBebedouroCasaVazia", "#1b2c36", { brilho: 0.05 });
+  const vaoRegua = profundidade(r) - 0.5;
+  const passo = vaoRegua / GOLES_BEBEDOURO;
+  const casas = Array.from({ length: GOLES_BEBEDOURO }, (_, i) => {
+    const casa = CreateBox(`bebedouro-casa-${i}`, { width: 0.34, height: 0.04, depth: passo - 0.08 }, scene);
+    casa.position.set(r.minX + 0.28, 0.185, r.minZ + 0.25 + passo * (i + 0.5));
+    casa.material = matVazio;
+    casa.freezeWorldMatrix();
+    return casa;
+  });
+
+  // Decalque no chão: ninguém precisa chegar perto para saber o que é isto.
+  // Encostado à direita da plataforma para não brigar com a régua, que ocupa a
+  // faixa da esquerda no mesmo plano.
+  const decalque = CreatePlane("bebedouro-decalque", { width: 1.2, height: 0.6 }, scene);
+  decalque.rotation.x = Math.PI / 2;
+  decalque.position.set(r.maxX - 0.68, 0.19, r.minZ + 1.15);
+  // Ciano cheio com letra escura: no piso claro é o que se enxerga do outro
+  // lado do salão — placa escura sumia contra a plataforma.
+  decalque.material = materialPlaca(scene, "bebedouroDecalque", "ÁGUA", PALETA.ciano, "#0d1a22");
+  decalque.freezeWorldMatrix();
+
+  let ultimoNivel = -1;
+  return {
+    atualizar(nivel) {
+      const goles = Math.max(0, Math.min(GOLES_BEBEDOURO, Math.round(nivel)));
+      if (goles === ultimoNivel) return;
+      ultimoNivel = goles;
+      const fracao = goles / GOLES_BEBEDOURO;
+      agua.setEnabled(goles > 0);
+      agua.scaling.y = Math.max(0.001, fracao);
+      agua.position.set(xGabinete, BASE_AGUA + (ALTURA_AGUA * fracao) / 2, zGabinete);
+      casas.forEach((casa, i) => {
+        casa.material = i < goles ? matCheio : matVazio;
+      });
+    },
+  };
 }
 
 // ------------------------------------------------------------------ piso
@@ -228,6 +325,9 @@ function piso(scene: Scene, mats: Materiais, tapetes: Map<Estacao, Tapete>): voi
       ],
     },
     { id: "assistencia", retangulos: [{ minX: 4.6, maxX: 11, minZ: 7, maxZ: 11.5 }] },
+    // O tapete é o que dá presença ao bebedouro sem custar altura: ele
+    // transborda a pegada do móvel de propósito.
+    { id: "bebedouro", retangulos: [{ minX: 8.7, maxX: 11, minZ: -1.5, maxZ: 4.3 }] },
     {
       id: "almoxarifado",
       retangulos: [

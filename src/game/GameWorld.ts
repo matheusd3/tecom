@@ -15,6 +15,7 @@ import {
   Upgrade,
   UpgradeId,
 } from "./types";
+import { GOLES_BEBEDOURO } from "./types";
 
 const MONTH_SECONDS = 14_400; // 30 dias de jogo, com 1 dia = 8 minutos
 const CUSTOMER_PATIENCE_PER_SECOND = 0.38;
@@ -32,8 +33,16 @@ const CATALOGO_MELHORIAS: Upgrade[] = [
 ];
 const SHIFT_DURATION = 120;
 const RESERVA_CLIENTE_SECONDS = 10;
-const GOLES_BEBEDOURO = 8;
 const INTERVALO_BEBEDOURO = 25;
+/**
+ * Resposta de tudo que o jogador tenta fazer com o turno pausado. É uma função
+ * porque a interface troca o aviso comparando a identidade do objeto: uma
+ * constante compartilhada faria a segunda tentativa não mostrar nada.
+ */
+const TURNO_PAUSADO = (): ActionResult => ({
+  ok: false,
+  message: "Turno pausado: retome o relógio para atender a loja.",
+});
 /**
  * Tempo que o cliente leva da porta até o balcão. Ninguém pode ser atendido
  * antes de chegar: sem isso o atendente auxiliar fechava a venda enquanto o
@@ -152,6 +161,16 @@ export class GameWorld {
     this.state.timeSpeed = Math.max(0.5, Math.min(4, speed));
   }
 
+  /**
+   * Pausa é pausa. Com o relógio parado o turno não corre, a paciência da fila
+   * não cai e ninguém chega — mas as ações do balcão continuavam valendo, e
+   * dava para pausar e liquidar a loja inteira sem gastar um segundo. Tudo que
+   * depende de gente na loja passa por aqui antes.
+   */
+  private pausado(): boolean {
+    return this.state.phase === "active" && this.state.isPaused;
+  }
+
   public togglePause(): void {
     if (this.state.phase !== "active") {
       this.startShift();
@@ -198,6 +217,7 @@ export class GameWorld {
   }
 
   public abastecerBebedouro(): ActionResult {
+    if (this.pausado()) return TURNO_PAUSADO();
     if (this.temUpgrade("bebedouroAutomatico")) return { ok: false, message: "O bebedouro automático já cuida do galão." };
     this.state.nivelDoBebedouro = GOLES_BEBEDOURO;
     return { ok: true, message: "Galão trocado: o bebedouro está cheio." };
@@ -273,6 +293,7 @@ export class GameWorld {
 
   /** Move uma caixa do almoxarifado para a prateleira. */
   public restockShelf(productType: ProductType, quantity = this.caixaDeReposicao): ActionResult {
+    if (this.pausado()) return TURNO_PAUSADO();
     const product = this.state.products.get(productType);
     if (!product) return { ok: false, message: "Produto desconhecido." };
     if (product.storage <= 0) {
@@ -310,6 +331,7 @@ export class GameWorld {
    * consumir a disponibilidade do vendedor do jogador.
    */
   public sellToCustomer(customerId: string, offeredPrice: number, sellerId?: string): ActionResult {
+    if (this.pausado()) return TURNO_PAUSADO();
     const customer = this.state.customers.get(customerId);
     if (!customer?.needsProduct || customer.status !== "waiting") {
       return { ok: false, message: "Esse cliente não está disponível para atendimento." };
@@ -356,6 +378,7 @@ export class GameWorld {
 
   /** Recebe o aparelho no balcão para que alguém o leve à assistência. */
   public receiveRepair(customerId: string): ActionResult {
+    if (this.pausado()) return TURNO_PAUSADO();
     const customer = this.state.customers.get(customerId);
     if (!customer?.needsService || customer.status !== "waiting") {
       return { ok: false, message: "Esse reparo não está disponível." };
@@ -372,6 +395,7 @@ export class GameWorld {
 
   /** Deixa o aparelho na assistência. Se o técnico estiver ocupado, entra na pilha. */
   public acceptRepair(customerId: string): ActionResult {
+    if (this.pausado()) return TURNO_PAUSADO();
     const customer = this.state.customers.get(customerId);
     if (!customer?.needsService || customer.status !== "beingServed") {
       return { ok: false, message: "Receba o aparelho no balcão antes de levá-lo à assistência." };
@@ -402,6 +426,7 @@ export class GameWorld {
    * mesmo assume a bancada; se já está rodando, cada ajuda encurta o prazo.
    */
   public helpRepair(): ActionResult {
+    if (this.pausado()) return TURNO_PAUSADO();
     const naFila = this.state.repairs.find((repair) => repair.status === "queued");
     if (naFila) {
       // Sem técnico livre quem trabalha é o jogador — e rende menos que um
@@ -434,6 +459,7 @@ export class GameWorld {
 
   /** Fecha a venda que o auxiliar não podia decidir sozinho. */
   public approveDiscount(): ActionResult {
+    if (this.pausado()) return TURNO_PAUSADO();
     const pedido = this.state.pendingDiscount;
     if (!pedido) return { ok: false, message: "Não há desconto esperando aprovação." };
     const helper = Array.from(this.state.employees.values()).find(
@@ -461,6 +487,7 @@ export class GameWorld {
 
   /** Retira um reparo pronto para devolvê-lo ao balcão. */
   public collectCompletedRepair(customerId: string): ActionResult {
+    if (this.pausado()) return TURNO_PAUSADO();
     const repair = this.state.repairs.find((item) => item.customerId === customerId && item.status === "ready");
     if (!repair) return { ok: false, message: "Nenhum aparelho pronto para retirar nesta bancada." };
     repair.status = "returning";
@@ -469,6 +496,7 @@ export class GameWorld {
 
   /** Devolve o aparelho reparado e só então fecha financeiramente a ordem. */
   public returnRepairToCustomer(customerId: string): ActionResult {
+    if (this.pausado()) return TURNO_PAUSADO();
     const repair = this.state.repairs.find((item) => item.customerId === customerId && item.status === "returning");
     const customer = this.state.customers.get(customerId);
     if (!repair || !customer) return { ok: false, message: "Esse aparelho não está pronto para devolução." };
@@ -483,6 +511,7 @@ export class GameWorld {
   }
 
   public declineCustomer(customerId: string): ActionResult {
+    if (this.pausado()) return TURNO_PAUSADO();
     const customer = this.state.customers.get(customerId);
     if (!customer || customer.status !== "waiting") return { ok: false, message: "Esse cliente não está disponível." };
     this.loseCustomer(customer, "dispensado no balcão");

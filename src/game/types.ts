@@ -165,6 +165,13 @@ export interface GameState {
   nivelDoBebedouro: number;
 }
 
+/**
+ * Goles de um galão cheio. Mora aqui porque três camadas precisam do mesmo
+ * número: o núcleo (que consome), a cena (que desenha a régua) e a ponte do
+ * teclado (que decide se vale a pena buscar outro galão).
+ */
+export const GOLES_BEBEDOURO = 8;
+
 export interface Opportunity {
   id: string;
   type: "sales" | "service" | "hiring" | "pricing" | "stock";

@@ -70,8 +70,12 @@ export const MOVEIS = {
   estanteAlmoxarifado: { minX: 2.6, maxX: 11, minZ: 14.2, maxZ: 15.4 } as Retangulo,
   /** Cantinho de espera (pufes e mesinha) no meio do salão. */
   esperaClientes: { minX: 6, maxX: 8.8, minZ: 0.5, maxZ: 2.6 } as Retangulo,
-  /** Ocupa a antiga pilha de entregas; ainda baixo para não ocultar o piso. */
-  bebedouro: { minX: 9.4, maxX: 11, minZ: 0.4, maxZ: 2.6 } as Retangulo,
+  /**
+   * Ponto de água encostado na parede da direita. Ele ganhou pegada em vez de
+   * altura: nesta câmera o que se lê é a silhueta no chão, e passar de ~1,3
+   * apagaria o piso atrás. Por isso é largo, fundo e baixo.
+   */
+  bebedouro: { minX: 9.2, maxX: 11, minZ: -0.6, maxZ: 3.4 } as Retangulo,
   plantaEsquerda: { minX: -11, maxX: -9.6, minZ: -11.5, maxZ: -10.1 } as Retangulo,
   plantaDireita: { minX: 9.6, maxX: 11, minZ: -11.5, maxZ: -10.1 } as Retangulo,
 };

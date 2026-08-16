@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { createGameScene, type GameHandle, type PlayerStation } from "@/game/scene";
 import type { GameWorld } from "@/game/GameWorld";
+import { GOLES_BEBEDOURO } from "@/game/types";
 import type {
   ActionResult,
   GameState,
@@ -41,6 +42,21 @@ const FALHA_SEM_NUCLEO: ActionResult = {
   ok: false,
   message: "Ação indisponível: o núcleo do jogo ainda não expõe esse método.",
 };
+
+/**
+ * O `GameWorld` já recusa tudo com o turno pausado, mas quem tira produto da
+ * prateleira e galão do almoxarifado é esta ponte — ela mexe direto no
+ * `GameHandle`. Por isso a barreira precisa existir dos dois lados.
+ */
+const TURNO_PAUSADO = (): ActionResult => ({
+  ok: false,
+  message: "Turno pausado: retome o relógio para atender a loja.",
+});
+
+function turnoPausado(world: GameWorld | null): boolean {
+  const state = world?.getState();
+  return !!state && state.isPaused && state.phase === "active";
+}
 
 // Ponte com os métodos do turno. O contrato está em PHASE2_TASKS.md; enquanto o
 // Codex termina de publicá-los, a interface detecta o que existe em vez de
@@ -120,6 +136,7 @@ export default function GameCanvas() {
         if (type) return world.getState().products.get(type)?.name;
         const restock = handleRef.current?.getCarriedRestock();
         if (restock) return `caixa de ${world.getState().products.get(restock)?.name ?? "mercadoria"}`;
+        if (handleRef.current?.getCarriedGallon()) return "galão de água";
         const repairCustomerId = handleRef.current?.getCarriedRepairCustomerId();
         return repairCustomerId ? `aparelho de ${world.getState().customers.get(repairCustomerId)?.name ?? "cliente"}` : undefined;
       })(),
@@ -140,6 +157,11 @@ export default function GameCanvas() {
     const handle = handleRef.current;
     if (!world || !handle) return;
     const state = world.getState();
+    if (turnoPausado(world)) {
+      mapActionRef.current = TURNO_PAUSADO();
+      sincronizar();
+      return;
+    }
     const carriedRepairCustomerId = handle.getCarriedRepairCustomerId();
     const carriedProduct = handle.getCarriedProduct();
     const carriedRestock = handle.getCarriedRestock();
@@ -193,8 +215,15 @@ export default function GameCanvas() {
       } else if (carriedProduct) {
         result = { ok: false, message: "Você já está com um produto na mão. Leve-o ao balcão." };
       } else {
+        // Aqui saem as duas cargas da sala dos fundos: a caixa de mercadoria e
+        // o galão de água. Bebedouro seco fura a fila da reposição — sem água
+        // a equipe inteira perde ânimo, e repor prateleira pode esperar.
         const paraRepor = world.produtoParaRepor();
-        if (!paraRepor) {
+        const galaoUtil = state.nivelDoBebedouro < GOLES_BEBEDOURO;
+        if (state.nivelDoBebedouro === 0 || (!paraRepor && galaoUtil)) {
+          handle.pickUpGallon();
+          result = { ok: true, message: "Galão cheio nas mãos. Leve-o ao bebedouro." };
+        } else if (!paraRepor) {
           result = { ok: false, message: "Almoxarifado vazio. Compre mercadoria no painel de estoque." };
         } else {
           handle.pickUpRestock(paraRepor);
@@ -202,7 +231,7 @@ export default function GameCanvas() {
           result = { ok: true, message: `Caixa de ${nome} nas mãos. Leve até a prateleira.` };
         }
       }
-    } else if (station === "prateleira" && (carriedProduct || carriedRepairCustomerId || carriedRestock)) {
+    } else if (station === "prateleira" && (carriedProduct || carriedRepairCustomerId || carriedRestock || carriedGallon)) {
       // Devolver é o único jeito de destravar as mãos quando a venda não sai
       // (cliente dispensado, desconto recusado, item errado). Vem antes da
       // checagem de fila justamente porque costuma não haver mais ninguém.
@@ -211,11 +240,11 @@ export default function GameCanvas() {
           ok: false,
           message: "Isso é o aparelho de um cliente: leve-o à bancada técnica.",
         };
+      } else if (carriedGallon) {
+        result = { ok: false, message: "Galão de água não vai na prateleira: leve-o ao bebedouro." };
       } else if (carriedRestock) {
         result = world.restockShelf(carriedRestock);
         if (result.ok) handle.putDownProduct();
-      } else if (state.nivelDoBebedouro < 8) {
-        handle.pickUpGallon(); result = { ok: true, message: "Galão cheio nas mãos. Leve-o ao bebedouro." };
       } else {
         const nome = carriedProduct ? state.products.get(carriedProduct)?.name : undefined;
         handle.putDownProduct();
@@ -410,6 +439,7 @@ export default function GameCanvas() {
       const world = worldRef.current;
       const handle = handleRef.current;
       if (!world || !handle) return FALHA_SEM_NUCLEO;
+      if (turnoPausado(world)) return TURNO_PAUSADO();
       const customer = world.getState().customers.get(id);
       if (!customer?.needsProduct) {
         return { ok: false, message: "Este cliente precisa da assistência técnica." };
@@ -505,6 +535,7 @@ export default function GameCanvas() {
       const world = worldRef.current;
       const handle = handleRef.current;
       if (!world || !handle) return FALHA_SEM_NUCLEO;
+      if (turnoPausado(world)) return TURNO_PAUSADO();
       if (handle.getPlayerStation() === "balcao") {
         const resultado = world.receiveRepair(id);
         if (resultado.ok) handle.pickUpRepair(id);
