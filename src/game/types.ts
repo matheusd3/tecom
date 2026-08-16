@@ -2,7 +2,7 @@
 
 export type ProductType = "notebook" | "mouse" | "keyboard" | "monitor" | "headset" | "webcam" | "ssd" | "ram";
 export type ServiceType = "diagnosis" | "repair" | "upgrade" | "cleaning";
-export type EmployeeRole = "seller" | "technician" | "manager";
+export type EmployeeRole = "seller" | "technician" | "manager" | "consultant";
 export type CustomerStatus = "waiting" | "beingServed" | "repairing" | "leaving";
 export type GamePhase = "planning" | "active" | "summary";
 export type ShiftEventType = "influencer" | "couponLeak" | "powerSurge";
@@ -15,6 +15,9 @@ export type UpgradeId =
   | "letreiroRua"
   | "cafeDaEspera"
   | "bebedouroAutomatico"
+  | "cafeteiraAutomatica"
+  | "treinamentoBancada"
+  | "manualAtendimento"
   // Linha de capacidade de atendimento: quantos itens o atendente leva por vez.
   | "cestaAtendimento"
   | "carrinhoAtendimento"
@@ -98,7 +101,7 @@ export interface Employee {
    * uma só no estado) porque vários auxiliares podem estar em tarefas
    * diferentes ao mesmo tempo, e a cena precisa animar o trajeto de cada um.
    */
-  currentTask?: "venda" | "levarReparo" | "trazerReparo" | "repor";
+  currentTask?: "venda" | "levarReparo" | "trazerReparo" | "repor" | "cafe";
 }
 
 export interface Customer {
@@ -163,6 +166,8 @@ export interface DiscountRequest {
   customerPrice: number;
   /** Quem pediu — aparece na tela para o jogador saber de onde veio. */
   askedBy: string;
+  /** Desconto é exceção para baixo; ágio é a oferta acima da vitrine. */
+  kind: "discount" | "premium";
 }
 
 export interface GameState {
@@ -191,7 +196,7 @@ export interface GameState {
   repairs: RepairOrder[];
   supportTask?: string;
   /** Que tipo de tarefa o auxiliar está fazendo — a cena usa para encenar o trajeto. */
-  supportTaskKind?: "venda" | "levarReparo" | "trazerReparo" | "repor";
+  supportTaskKind?: "venda" | "levarReparo" | "trazerReparo" | "repor" | "cafe";
   /** Venda que o auxiliar não pode fechar sozinho: espera o aval do jogador. */
   pendingDiscount?: DiscountRequest;
   missedSales: number;
@@ -202,6 +207,8 @@ export interface GameState {
   upgrades: UpgradeId[];
   upgradesOferecidos: OfertaDoDia[];
   nivelDoBebedouro: number;
+  /** Doses disponíveis na cafeteira. Café é consumível e pode ser reposto pela equipe. */
+  nivelDoCafe: number;
 }
 
 /**
@@ -210,6 +217,7 @@ export interface GameState {
  * teclado (que decide se vale a pena buscar outro galão).
  */
 export const GOLES_BEBEDOURO = 8;
+export const DOSES_CAFE = 10;
 
 export interface Opportunity {
   id: string;

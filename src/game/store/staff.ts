@@ -75,6 +75,11 @@ function postoDeTecnico(indice: number): Posto {
   };
 }
 
+/** Gerente fica visível perto da frente, fora do fluxo do balcão e sem colisão própria. */
+function postoDeGerente(): Posto {
+  return { ponto: { x: 3.8, z: -1.4 }, giro: Math.PI * 0.78 };
+}
+
 /** Onde o auxiliar entrega e retira aparelhos. */
 function pontoDaBancada(): Ponto {
   const bancada = centro(MOVEIS.bancada);
@@ -98,6 +103,7 @@ function pontoDoAlmoxarifado(): Ponto {
  * produto; reparo é ida e volta até a bancada, com o aparelho na perna certa.
  */
 function trajetoDaTarefa(tipo: Employee["currentTask"], posto: Ponto): Trecho[] {
+  if (tipo === "cafe") return [{ destino: posto, carga: null }];
   if (tipo === "venda") {
     return [
       { destino: pontoDaPrateleira(), carga: null },
@@ -127,14 +133,15 @@ function trajetoDaTarefa(tipo: Employee["currentTask"], posto: Ponto): Trecho[] 
 export function criarEquipe(fabrica: FabricaDePessoas, world: { getState(): GameState }): Equipe {
   const membros = new Map<string, Membro>();
 
-  const criar = (employee: Employee, indice: number): Personagem => {
-    const tecnico = employee.role === "technician";
+    const criar = (employee: Employee, indice: number): Personagem => {
+      const tecnico = employee.role === "technician";
+      const gerente = employee.role === "manager";
     const paleta = CORES_CLIENTE[(indice + (tecnico ? 5 : 1)) % CORES_CLIENTE.length];
     return fabrica.criar({
       nome: employee.name,
       // Uniforme da casa: técnico de magenta, atendimento de âmbar. Assim
       // ninguém confunde a equipe com um cliente na fila.
-      roupa: tecnico ? PALETA.magenta : PALETA.ambar,
+        roupa: tecnico ? PALETA.magenta : gerente ? PALETA.ciano : PALETA.ambar,
       calca: paleta.calca,
       pele: PELES[indice % PELES.length],
       cabelo: paleta.cabelo,
@@ -161,9 +168,9 @@ export function criarEquipe(fabrica: FabricaDePessoas, world: { getState(): Game
   return {
     atualizar(deltaSeconds) {
       const estado = world.getState();
-      const funcionarios = Array.from(estado.employees.values()).filter(
-        (employee) => employee.id !== ID_DO_JOGADOR
-      );
+       const funcionarios = Array.from(estado.employees.values()).filter(
+         (employee) => employee.id !== ID_DO_JOGADOR && employee.role !== "consultant"
+       );
       const presentes = new Set(funcionarios.map((employee) => employee.id));
 
       for (const [id, membro] of membros) {
@@ -173,10 +180,11 @@ export function criarEquipe(fabrica: FabricaDePessoas, world: { getState(): Game
       }
 
       let vendedores = 0;
-      let tecnicos = 0;
+       let tecnicos = 0;
       for (const [indice, employee] of funcionarios.entries()) {
-        const tecnico = employee.role === "technician";
-        const posto = tecnico ? postoDeTecnico(tecnicos++) : postoDeVendedor(vendedores++);
+         const tecnico = employee.role === "technician";
+         const gerente = employee.role === "manager";
+         const posto = tecnico ? postoDeTecnico(tecnicos++) : gerente ? postoDeGerente() : postoDeVendedor(vendedores++);
 
         let membro = membros.get(employee.id);
         if (!membro) {
@@ -197,14 +205,14 @@ export function criarEquipe(fabrica: FabricaDePessoas, world: { getState(): Game
         // cliente, com a nuvem no lugar do ícone de produto.
         membro.personagem.definirPedido(employee.happiness < LIMITE_CANSACO ? "bravo" : null);
 
-        if (tecnico) {
-          // Técnico não sai da bancada: o conserto acontece ali.
+         if (tecnico || gerente) {
+           // Técnico não sai da bancada; gerente fica no posto de supervisão.
           membro.posicao.x = posto.ponto.x;
           membro.posicao.z = posto.ponto.z;
           membro.personagem.raiz.rotation.y = posto.giro;
           membro.personagem.animar(deltaSeconds, 0);
           // Aparelho na mão enquanto conserta: dá para ver o trabalho rodando.
-          membro.personagem.definirCarga(employee.isBusy ? "aparelho" : null);
+           membro.personagem.definirCarga(tecnico && employee.isBusy ? "aparelho" : null);
         } else {
           // O núcleo marca o auxiliar como ocupado no instante em que resolve a
           // tarefa; essa borda é o gatilho do trajeto correspondente.

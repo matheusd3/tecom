@@ -547,8 +547,9 @@ export default function GameCanvas() {
           customerName: pedidoDoAuxiliar.customerName,
           produto: pedidoDoAuxiliar.productName,
           precoVitrine: pedidoDoAuxiliar.showcasePrice,
-          precoCliente: pedidoDoAuxiliar.customerPrice,
-          pedidoPor: pedidoDoAuxiliar.askedBy,
+           precoCliente: pedidoDoAuxiliar.customerPrice,
+           pedidoPor: pedidoDoAuxiliar.askedBy,
+           tipo: pedidoDoAuxiliar.kind,
         }
       : null);
 

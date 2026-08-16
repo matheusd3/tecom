@@ -19,7 +19,7 @@ import {
   Upgrade,
   UpgradeId,
 } from "./types";
-import { GOLES_BEBEDOURO } from "./types";
+import { DOSES_CAFE, GOLES_BEBEDOURO } from "./types";
 
 /** Salário é mensal e o turno é um dia: a folha diária é um trinta avos. */
 const DIAS_DO_MES = 30;
@@ -60,9 +60,12 @@ const CATALOGO_MELHORIAS: Upgrade[] = [
   { id: "letreiroRua", nome: "Letreiro para a rua", descricao: "Clientes chegam mais rápido.", custo: 2500, requer: [], tier: 2, resolve: "fluxo" },
   { id: "carrinhoAtendimento", nome: "Carrinho de atendimento", descricao: "Sobe para 3 itens por vez — dá para montar duas vendas na mesma volta.", custo: 2800, requer: ["cestaAtendimento"], tier: 2, resolve: "movimento" },
   { id: "bancadaRapida", nome: "Bancada com testes", descricao: "Reparos levam 25% menos tempo.", custo: 3000, requer: [], tier: 2, resolve: "reparo" },
+  { id: "treinamentoBancada", nome: "Treinamento da bancada", descricao: "+15 de habilidade para técnicos atuais e futuros.", custo: 2800, requer: [], tier: 2, resolve: "reparo" },
+  { id: "manualAtendimento", nome: "Manual de atendimento", descricao: "+15 de habilidade para vendedores e gerente; melhora as aprovações.", custo: 2600, requer: [], tier: 2, resolve: "fila" },
   // Camada 3 — a partir do dia 5, quando o caixa já aguenta.
   { id: "segundoBalcao", nome: "Segundo balcão", descricao: "A fila comporta mais 2 clientes ao mesmo tempo.", custo: 3500, requer: [], tier: 3, resolve: "fila" },
   { id: "carrinhoDuplo", nome: "Carrinho duplo", descricao: "Sobe para 4 itens por vez: a loja inteira cabe numa volta só.", custo: 4200, requer: ["carrinhoAtendimento"], tier: 3, resolve: "movimento" },
+  { id: "cafeteiraAutomatica", nome: "Cafeteira automática", descricao: "Reabastece o café da espera antes que ele acabe.", custo: 3200, requer: ["cafeDaEspera"], tier: 3, resolve: "equipe" },
 ];
 /** Quantos itens o atendente leva de uma vez, por melhoria da linha. */
 const CAPACIDADE_POR_MELHORIA: Array<[UpgradeId, number]> = [
@@ -73,6 +76,7 @@ const CAPACIDADE_POR_MELHORIA: Array<[UpgradeId, number]> = [
 const SHIFT_DURATION = 120;
 const RESERVA_CLIENTE_SECONDS = 10;
 const INTERVALO_BEBEDOURO = 25;
+const INTERVALO_CAFE = 12;
 /**
  * Resposta de tudo que o jogador tenta fazer com o turno pausado. É uma função
  * porque a interface troca o aviso comparando a identidade do objeto: uma
@@ -97,6 +101,7 @@ const LIMITE_EQUIPE: Record<EmployeeRole, number> = {
   seller: 2,
   technician: 3,
   manager: 1,
+  consultant: 1,
 };
 /** Preço de vitrine não passa disso vezes o valor de mercado do produto. */
 const PRICE_CEILING_FACTOR = 2.5;
@@ -129,6 +134,7 @@ export class GameWorld {
   private shiftHighlights: string[] = [];
   private supportAttendantTimer = 0;
   private nextDrinkAt = new Map<string, number>();
+  private nextCoffeeAt = 0;
   /**
    * Só os que zeraram a paciência — dispensa no balcão e fechamento da loja não
    * contam. É o sinal que separa "faltou produto" de "faltou perna".
@@ -150,6 +156,7 @@ export class GameWorld {
     this.generateCustomers(elapsed);
     this.processRepairs();
     this.processarBebedouro();
+    this.processarCafe();
     this.runSupportAttendant(elapsed);
     this.removeDepartedCustomers();
     // Desconto pendente morre com o cliente que o motivou.
@@ -173,7 +180,9 @@ export class GameWorld {
   }
 
   public getOpportunities(): Opportunity[] {
-    return [...this.opportunities];
+    if (this.temConsultor()) return [...this.opportunities];
+    const grave = this.opportunities.find((item) => item.severity === "high");
+    return grave ? [grave] : [];
   }
 
   public getUpgradesOferecidos(): OfertaDeMelhoria[] {
@@ -206,6 +215,12 @@ export class GameWorld {
     if (this.state.cash < upgrade.custo) return { ok: false, message: "Caixa insuficiente para esta melhoria." };
     this.recordExpense(upgrade.custo);
     this.state.upgrades.push(id);
+    if (id === "cafeDaEspera") this.state.nivelDoCafe = DOSES_CAFE;
+    if (id === "treinamentoBancada") this.aplicarTreinamento("technician");
+    if (id === "manualAtendimento") {
+      this.aplicarTreinamento("seller");
+      this.aplicarTreinamento("manager");
+    }
     this.state.upgradesOferecidos = [];
     return { ok: true, message: `${upgrade.nome} instalada: efeito permanente a partir do próximo turno.` };
   }
@@ -283,6 +298,16 @@ export class GameWorld {
     return { ok: true, message: "Galão trocado: o bebedouro está cheio." };
   }
 
+  /** Café é o oposto do galão: qualquer auxiliar pode cuidar dele. */
+  public reporCafe(): ActionResult {
+    if (this.pausado()) return TURNO_PAUSADO();
+    if (!this.temUpgrade("cafeDaEspera")) return { ok: false, message: "Instale o café na espera antes de reabastecer." };
+    if (this.temUpgrade("cafeteiraAutomatica")) return { ok: false, message: "A cafeteira automática já cuida do café." };
+    if (this.state.nivelDoCafe >= DOSES_CAFE) return { ok: false, message: "O café já está cheio." };
+    this.state.nivelDoCafe = DOSES_CAFE;
+    return { ok: true, message: "Pacote de café reposto: a espera está servida." };
+  }
+
   public getShiftReport(): ShiftReport | null {
     return this.shiftReport;
   }
@@ -298,7 +323,7 @@ export class GameWorld {
 
   public hireEmployee(role: EmployeeRole, name: string): boolean {
     if (this.vagasRestantes(role) === 0) return false;
-    const salary = role === "seller" ? 2_000 : role === "technician" ? 2_500 : 3_000;
+    const salary = role === "seller" ? 2_000 : role === "technician" ? 2_500 : role === "manager" ? 3_000 : 1_800;
     // Um salário de entrada, não dois: agora existe folha todo dia, e cobrar
     // caro na porta E todo dia deixaria a primeira contratação fora de alcance.
     const onboardingCost = salary;
@@ -310,7 +335,7 @@ export class GameWorld {
       name: name.trim() || "Novo funcionário",
       role,
       salary,
-      skill: 50,
+      skill: this.skillInicial(role),
       happiness: 80,
       isBusy: false,
       busyUntil: 0,
@@ -541,10 +566,11 @@ export class GameWorld {
   }
 
   public declineDiscount(): ActionResult {
+    if (this.pausado()) return TURNO_PAUSADO();
     const pedido = this.state.pendingDiscount;
     if (!pedido) return { ok: false, message: "Não há desconto esperando aprovação." };
     this.state.pendingDiscount = undefined;
-    return { ok: true, message: `Preço mantido para ${pedido.customerName}.` };
+    return { ok: true, message: pedido.kind === "premium" ? `Ágio recusado para ${pedido.customerName}.` : `Preço mantido para ${pedido.customerName}.` };
   }
 
   /** Retira um reparo pronto para devolvê-lo ao balcão. */
@@ -625,6 +651,7 @@ export class GameWorld {
       customerSatisfactionAvg: 80, employeeHappinessAvg: 79,
       upgrades: [], upgradesOferecidos: [],
       nivelDoBebedouro: GOLES_BEBEDOURO,
+      nivelDoCafe: 0,
     };
   }
 
@@ -667,7 +694,8 @@ export class GameWorld {
     for (const customer of this.state.customers.values()) {
       if (customer.status !== "waiting") continue;
       const urgencyMultiplier = customer.urgency === "high" ? 1.65 : customer.urgency === "medium" ? 1.2 : 1;
-      customer.patience = Math.max(0, customer.patience - elapsed * CUSTOMER_PATIENCE_PER_SECOND * urgencyMultiplier * (this.temUpgrade("cafeDaEspera") ? 0.75 : 1));
+      const cafeAtivo = this.temUpgrade("cafeDaEspera") && this.state.nivelDoCafe > 0;
+      customer.patience = Math.max(0, customer.patience - elapsed * CUSTOMER_PATIENCE_PER_SECOND * urgencyMultiplier * (cafeAtivo ? 0.75 : 1));
       if (customer.patience > 0) continue;
       this.shiftPerdidosPorEspera++;
       this.loseCustomer(customer, "cansou de esperar");
@@ -761,7 +789,7 @@ export class GameWorld {
     const vendaDireta = Array.from(this.state.customers.values()).find((customer) => {
       if (!atendivel(customer) || !customer.needsProduct) return false;
       const product = this.state.products.get(customer.needsProduct);
-      return !!product && product.stock > 0 && customer.budget >= product.sellingPrice;
+       return !!product && product.stock > 0 && customer.budget >= product.sellingPrice && customer.budget <= product.sellingPrice * 1.08;
     });
     if (vendaDireta?.needsProduct) {
       const product = this.state.products.get(vendaDireta.needsProduct)!;
@@ -780,20 +808,37 @@ export class GameWorld {
       const precisaAval = Array.from(this.state.customers.values()).find((customer) => {
         if (!atendivel(customer) || !customer.needsProduct) return false;
         const product = this.state.products.get(customer.needsProduct);
-        return !!product && product.stock > 0 && customer.budget < product.sellingPrice;
+        return !!product && product.stock > 0 && (customer.budget < product.sellingPrice || customer.budget > product.sellingPrice * 1.08);
       });
       if (precisaAval?.needsProduct) {
         const product = this.state.products.get(precisaAval.needsProduct)!;
-        this.state.pendingDiscount = {
+        const kind: "discount" | "premium" = precisaAval.budget < product.sellingPrice ? "discount" : "premium";
+        const pedido = {
           customerId: precisaAval.id,
           customerName: precisaAval.name,
           productName: product.name,
           showcasePrice: product.sellingPrice,
           customerPrice: precisaAval.budget,
           askedBy: helper.name,
+          kind,
         };
         alvosTomados.add(`cliente:${precisaAval.id}`);
-        this.state.supportTask = `${helper.name} pediu aprovação de desconto em ${product.name}.`;
+        if (this.temGerente()) {
+          const gerente = Array.from(this.state.employees.values()).find((employee) => employee.role === "manager")!;
+          const desconto = (pedido.showcasePrice - pedido.customerPrice) / pedido.showcasePrice;
+          const limite = 0.10 + gerente.skill / 1000;
+          if (kind === "premium" || desconto <= limite) {
+            const resultado = this.sellToCustomer(pedido.customerId, pedido.customerPrice, helper.id);
+            if (resultado.ok) {
+              ocupar(`${gerente.name} aprovou ${kind === "premium" ? "ágio" : "desconto"} em ${product.name}.`, "venda");
+              return true;
+            }
+          }
+          this.state.supportTask = `${gerente.name} recusou desconto de ${Math.round(desconto * 100)}% em ${product.name}.`;
+          return true;
+        }
+        this.state.pendingDiscount = pedido;
+        this.state.supportTask = `${helper.name} pediu aprovação de ${kind === "premium" ? "ágio" : "desconto"} em ${product.name}.`;
         this.state.supportTaskKind = undefined;
         return true;
       }
@@ -818,6 +863,14 @@ export class GameWorld {
       this.returnRepairToCustomer(readyRepair.customerId);
       ocupar(`${helper.name} devolveu um reparo pronto ao balcão.`, "trazerReparo");
       return true;
+    }
+
+    if (this.temUpgrade("cafeDaEspera") && this.state.nivelDoCafe < DOSES_CAFE) {
+      const resultado = this.reporCafe();
+      if (resultado.ok) {
+        ocupar(`${helper.name} repôs o café da espera.`, "cafe");
+        return true;
+      }
     }
 
     // Sem cliente para atender, o auxiliar abastece a prateleira. É a tarefa de
@@ -1039,7 +1092,21 @@ export class GameWorld {
   }
 
   private duracaoReparo(base: number): number { return base * (this.temUpgrade("bancadaRapida") ? 0.75 : 1); }
-  private duracaoDoFuncionario(employee: Employee | undefined, base: number): number { return base * (employee && employee.happiness < 40 ? 1.25 : 1); }
+  private duracaoDoFuncionario(employee: Employee | undefined, base: number): number {
+    const cansaco = employee && employee.happiness < 40 ? 1.25 : 1;
+    const gerente = this.temGerente() && employee?.role === "seller" ? 0.8 : 1;
+    return base * cansaco * gerente;
+  }
+  private skillInicial(role: EmployeeRole): number {
+    const treinamento = role === "technician" && this.temUpgrade("treinamentoBancada");
+    const manual = (role === "seller" || role === "manager") && this.temUpgrade("manualAtendimento");
+    return 50 + (treinamento || manual ? 15 : 0);
+  }
+  private aplicarTreinamento(role: EmployeeRole): void {
+    for (const employee of this.state.employees.values()) if (employee.role === role) employee.skill += 15;
+  }
+  private temGerente(): boolean { return Array.from(this.state.employees.values()).some((employee) => employee.role === "manager"); }
+  private temConsultor(): boolean { return Array.from(this.state.employees.values()).some((employee) => employee.role === "consultant"); }
   private cansar(employee: Employee): void { employee.happiness = Math.max(0, employee.happiness - 0.6); }
   private processarBebedouro(): void {
     if (this.temUpgrade("bebedouroAutomatico") && this.state.nivelDoBebedouro === 0) this.state.nivelDoBebedouro = GOLES_BEBEDOURO;
@@ -1049,6 +1116,16 @@ export class GameWorld {
       this.nextDrinkAt.set(employee.id, this.state.time + INTERVALO_BEBEDOURO);
       if (this.state.nivelDoBebedouro > 0) { this.state.nivelDoBebedouro--; employee.happiness = Math.min(100, employee.happiness + 8); }
     }
+  }
+  private processarCafe(): void {
+    if (!this.temUpgrade("cafeDaEspera")) return;
+    if (this.temUpgrade("cafeteiraAutomatica") && this.state.nivelDoCafe === 0) {
+      this.state.nivelDoCafe = DOSES_CAFE;
+      this.addHighlight("A cafeteira automática reabasteceu a espera.");
+    }
+    if (this.state.time < this.nextCoffeeAt) return;
+    this.nextCoffeeAt = this.state.time + INTERVALO_CAFE;
+    if (this.state.nivelDoCafe > 0) this.state.nivelDoCafe--;
   }
   /** Fração do caminho entre a demanda do dia 1 e a demanda cheia. */
   private pressaoDoDia(): number {

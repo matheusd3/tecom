@@ -41,6 +41,7 @@ export interface PedidoDesconto {
   precoCliente: number;
   /** Preenchido quando quem pediu foi o atendente auxiliar. */
   pedidoPor?: string;
+  tipo?: "discount" | "premium";
 }
 
 interface GameUIProps {
@@ -93,6 +94,7 @@ const SALARIOS: Record<EmployeeRole, number> = {
   seller: 2000,
   technician: 2500,
   manager: 3000,
+  consultant: 1800,
 };
 
 /** Espelha o teto do núcleo; o vendedor inicial é o jogador e não conta. */
@@ -100,12 +102,14 @@ const LIMITE_EQUIPE: Record<EmployeeRole, number> = {
   seller: 2,
   technician: 3,
   manager: 1,
+  consultant: 1,
 };
 
 const FUNCOES: Record<EmployeeRole, string> = {
   seller: "Vendedor",
   technician: "Técnico",
   manager: "Gerente",
+  consultant: "Consultor",
 };
 
 const STATUS_CLIENTE: Record<CustomerStatus, string> = {
@@ -352,6 +356,8 @@ export function GameUI(props: GameUIProps) {
     funcionarios.filter((f) => f.role === funcao && f.id !== "seller-1").length;
   const vagasAuxiliar = LIMITE_EQUIPE.seller - contratados("seller");
   const vagasTecnico = LIMITE_EQUIPE.technician - contratados("technician");
+  const vagasGerente = LIMITE_EQUIPE.manager - contratados("manager");
+  const vagasConsultor = LIMITE_EQUIPE.consultant - contratados("consultant");
 
   const fase = faseDe(gameState.phase);
   const dia = numero(gameState.day, 1);
@@ -448,13 +454,13 @@ export function GameUI(props: GameUIProps) {
 
   const contratar = (funcao: EmployeeRole) => {
     const nome = nomeParaContratacao(funcionarios.length);
-    const entrada = SALARIOS[funcao] * 2;
+    const entrada = SALARIOS[funcao];
     const ok = props.onHire(funcao, nome);
     setAviso(
       ok
         ? { texto: `${nome} contratado(a) por ${formatarMoeda(entrada)}`, tipo: "ok" }
         : {
-            texto: `Contratação exige ${formatarMoeda(entrada)} em caixa (2 salários).`,
+            texto: `Contratação exige ${formatarMoeda(entrada)} em caixa (1 salário).`,
             tipo: "erro",
           }
     );
@@ -951,13 +957,20 @@ export function GameUI(props: GameUIProps) {
                 >
                   + Técnico ({vagasTecnico}/{LIMITE_EQUIPE.technician})
                 </button>
+                <button className="btn btn--largo" onClick={() => contratar("manager")} disabled={vagasGerente === 0} title={vagasGerente === 0 ? "A loja já tem gerente" : `Contratar por ${formatarMoeda(SALARIOS.manager)}`}>
+                  + Gerente ({vagasGerente}/{LIMITE_EQUIPE.manager})
+                </button>
+                <button className="btn btn--largo" onClick={() => contratar("consultant")} disabled={vagasConsultor === 0} title={vagasConsultor === 0 ? "A loja já tem consultor" : `Contratar por ${formatarMoeda(SALARIOS.consultant)}`}>
+                  + Consultor ({vagasConsultor}/{LIMITE_EQUIPE.consultant})
+                </button>
               </div>
               <p className="nota">
                 A loja comporta {LIMITE_EQUIPE.seller} auxiliares e{" "}
                 {LIMITE_EQUIPE.technician} técnicos. O auxiliar fica no balcão:
                 fecha venda pelo preço de vitrine, repõe prateleira quando sobra
                 tempo e leva/busca aparelho na assistência — assim você pode
-                ficar na bancada. Desconto ele não dá: vem para você aprovar.
+                ficar na bancada. O gerente aprova descontos pequenos e todo ágio;
+                o consultor libera as recomendações completas.
               </p>
               {gameState.supportTask && (
                 <p className="nota valor--positivo">→ {gameState.supportTask}</p>
@@ -1013,6 +1026,9 @@ export function GameUI(props: GameUIProps) {
 
         {aba === "consultor" && (
           <>
+            {!funcionarios.some((f) => f.role === "consultant") && (
+              <div className="card"><p className="vazio">Contrate um consultor para receber análise completa, estimativas e ações rápidas. Enquanto isso, ele libera um alerta grave por turno.</p></div>
+            )}
             {opportunities.length === 0 ? (
               <div className="card">
                 <p className="vazio">
@@ -1244,6 +1260,7 @@ function AprovacaoDeDesconto({
   onAprovar: () => void;
   onRecusar: () => void;
 }) {
+  const agio = pedido.tipo === "premium";
   const desconto = pedido.precoVitrine - pedido.precoCliente;
   const percentual =
     pedido.precoVitrine > 0 ? (desconto / pedido.precoVitrine) * 100 : 0;
@@ -1253,15 +1270,15 @@ function AprovacaoDeDesconto({
       <header className="posto__topo">
         <div>
           <p className="palco__etiqueta">Precisa da sua aprovação</p>
-          <h2 className="palco__titulo">Desconto no {pedido.produto}</h2>
+          <h2 className="palco__titulo">{agio ? "Ágio" : "Desconto"} no {pedido.produto}</h2>
         </div>
-        <span className="urgencia urgencia--high">-{Math.round(percentual)}%</span>
+        <span className="urgencia urgencia--high">{agio ? "+" : "-"}{Math.round(Math.abs(percentual))}%</span>
       </header>
 
       <p className="palco__texto">
         {pedido.pedidoPor
-          ? `${pedido.pedidoPor} está no balcão com ${pedido.customerName}, que não paga o preço de vitrine, e não fecha desconto sem o seu aval.`
-          : `${pedido.customerName} não paga o preço de vitrine. O atendente está com o item na mão, esperando você decidir.`}
+          ? `${pedido.pedidoPor} está no balcão com ${pedido.customerName}, ${agio ? "que aceita pagar acima da vitrine" : "que não paga o preço de vitrine"}, e espera seu aval.`
+          : `${pedido.customerName} ${agio ? "aceita pagar acima da vitrine" : "não paga o preço de vitrine"}. O atendente está com o item na mão, esperando você decidir.`}
       </p>
 
       <div className="posto__pedido">
@@ -1276,9 +1293,9 @@ function AprovacaoDeDesconto({
           </strong>
         </div>
         <div className="kpi">
-          <span className="kpi__rotulo">Você abre mão de</span>
-          <strong className="kpi__valor valor--negativo">
-            {formatarMoeda(desconto)}
+          <span className="kpi__rotulo">{agio ? "Você ganha a mais" : "Você abre mão de"}</span>
+          <strong className={`kpi__valor ${agio ? "valor--positivo" : "valor--negativo"}`}>
+            {formatarMoeda(Math.abs(desconto))}
           </strong>
         </div>
       </div>
@@ -1288,7 +1305,7 @@ function AprovacaoDeDesconto({
           Aprovar por {formatarMoeda(pedido.precoCliente)}
         </button>
         <button className="btn" onClick={onRecusar}>
-          Manter preço
+          {agio ? "Manter vitrine" : "Manter preço"}
         </button>
       </div>
     </section>
