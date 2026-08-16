@@ -1246,9 +1246,23 @@ button {
   white-space: nowrap;
 }
 
-.entrada--oferta {
-  width: 96px;
-  font-variant-numeric: tabular-nums;
+/* O botão de fechar virou duas linhas: o valor em cima e, quando o preço sai
+   da vitrine, quanto ele varia embaixo. O campo de digitar preço saiu — o
+   valor certo é sempre um só, então digitar era teatro. */
+.btn--fechar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  line-height: 1.2;
+}
+
+.posto__variacao {
+  font-family: Inter, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  opacity: 0.9;
 }
 
 .btn--fechar {

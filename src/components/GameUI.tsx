@@ -287,7 +287,6 @@ export function GameUI(props: GameUIProps) {
   const [rascunhoPreco, setRascunhoPreco] = useState<
     Partial<Record<ProductType, string>>
   >({});
-  const [oferta, setOferta] = useState<string | null>(null);
   const [selecaoLocal, setSelecaoLocal] = useState<string | null>(null);
   const [confirmarReinicio, setConfirmarReinicio] = useState(false);
   // No celular deitado o painel é uma gaveta sobre a loja, então ele nasce
@@ -410,13 +409,11 @@ export function GameUI(props: GameUIProps) {
 
   const selecionar = (id: string) => {
     setSelecaoLocal(id);
-    setOferta(null);
     if (capacidades.selecionarCliente) props.onSelectCustomer(id);
   };
 
   const aplicarResultado = (r: ActionResult) => {
     setAviso({ texto: r.message, tipo: r.ok ? "ok" : "erro" });
-    if (r.ok) setOferta(null);
   };
 
   const vender = (cliente: Customer, preco: number) => {
@@ -744,8 +741,6 @@ export function GameUI(props: GameUIProps) {
                   ? gameState.products.get(selecionado.needsProduct)
                   : undefined
               }
-              oferta={oferta}
-              onOferta={setOferta}
               onVender={vender}
               onAceitarReparo={(id) => aplicarResultado(props.onAcceptRepair(id))}
               onRecusar={(id) => aplicarResultado(props.onDecline(id))}
@@ -1124,16 +1119,12 @@ export function GameUI(props: GameUIProps) {
 function PostoAtendimento({
   cliente,
   produto,
-  oferta,
-  onOferta,
   onVender,
   onAceitarReparo,
   onRecusar,
 }: {
   cliente: Customer;
   produto?: Product;
-  oferta: string | null;
-  onOferta: (valor: string | null) => void;
   onVender: (cliente: Customer, preco: number) => void;
   onAceitarReparo: (id: string) => void;
   onRecusar: (id: string) => void;
@@ -1142,9 +1133,24 @@ function PostoAtendimento({
   const classePaciencia =
     paciencia > 60 ? "ok" : paciencia > 30 ? "alerta" : "critico";
   const precoVitrine = produto?.sellingPrice ?? 0;
-  const valorOferta = Number((oferta ?? String(precoVitrine)).replace(",", "."));
-  const ofertaValida = Number.isFinite(valorOferta) && valorOferta > 0;
   const semEstoque = produto ? produto.stock <= 0 : false;
+
+  // O valor de fechamento é calculado, não digitado. Havia um campo de texto
+  // aqui e ele era teatro: o preço certo é sempre um só — a vitrine quando o
+  // cliente paga, o orçamento dele quando não paga (desconto) e o orçamento
+  // também quando ele topa pagar bem acima (ágio). Digitar qualquer outra
+  // coisa só rendia recusa do núcleo.
+  const abaixoDaVitrine = cliente.budget < precoVitrine;
+  // Mesma faixa de 8% que o núcleo usa para separar venda direta de ágio.
+  const acimaDaVitrine = cliente.budget > precoVitrine * 1.08;
+  const precoFechamento = abaixoDaVitrine || acimaDaVitrine ? cliente.budget : precoVitrine;
+  const diferenca =
+    precoVitrine > 0 ? Math.round(((precoFechamento - precoVitrine) / precoVitrine) * 100) : 0;
+  const rotuloVenda = abaixoDaVitrine
+    ? `Aprovar ${formatarMoeda(precoFechamento)}`
+    : acimaDaVitrine
+      ? `Aprovar ágio ${formatarMoeda(precoFechamento)}`
+      : `Vender por ${formatarMoeda(precoFechamento)}`;
 
   return (
     <section className={`palco__card posto posto--${cliente.urgency}`}>
@@ -1202,21 +1208,19 @@ function PostoAtendimento({
           </dl>
 
           <div className="posto__acoes">
-            <input
-              className="entrada entrada--oferta"
-              type="number"
-              step="1"
-              min={0}
-              value={oferta ?? precoVitrine.toFixed(2)}
-              onChange={(e) => onOferta(e.target.value)}
-              title="Valor de fechamento"
-            />
             <button
               className="btn btn--sucesso btn--fechar"
-              disabled={!ofertaValida}
-              onClick={() => onVender(cliente, valorOferta)}
+              disabled={semEstoque}
+              title={semEstoque ? "Sem estoque na prateleira" : undefined}
+              onClick={() => onVender(cliente, precoFechamento)}
             >
-              Vender
+              {rotuloVenda}
+              {diferenca !== 0 && (
+                <span className={`posto__variacao ${diferenca > 0 ? "valor--positivo" : "valor--negativo"}`}>
+                  {diferenca > 0 ? "+" : ""}
+                  {diferenca}% da vitrine
+                </span>
+              )}
             </button>
             <button className="btn" onClick={() => onRecusar(cliente.id)}>
               Dispensar
