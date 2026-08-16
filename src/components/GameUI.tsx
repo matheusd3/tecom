@@ -130,6 +130,35 @@ const ROTULO_ESTACAO: Record<PlayerStation, string> = {
   loja: "andando pela loja",
 };
 
+/**
+ * Anel de progresso do conserto — a "bolinha carregando" da bancada. SVG e não
+ * canvas: o traço fica nítido em qualquer densidade de tela e o preenchimento é
+ * um `stroke-dashoffset` só.
+ */
+function AnelDeConserto({ fracao, segundos }: { fracao: number; segundos: number }) {
+  const raio = 15;
+  const volta = 2 * Math.PI * raio;
+  return (
+    <div className="conserto" title="Tempo restante do conserto na bancada">
+      <svg className="conserto__anel" viewBox="0 0 36 36" aria-hidden="true">
+        <circle className="conserto__trilho" cx="18" cy="18" r={raio} />
+        <circle
+          className="conserto__arco"
+          cx="18"
+          cy="18"
+          r={raio}
+          strokeDasharray={volta}
+          strokeDashoffset={volta * (1 - Math.max(0, Math.min(1, fracao)))}
+        />
+      </svg>
+      <div className="conserto__texto">
+        <strong className="conserto__segundos">{segundos}s</strong>
+        <span className="conserto__rotulo">conserto</span>
+      </div>
+    </div>
+  );
+}
+
 /** Para onde levar o item que está por cima da pilha. */
 function destinoDaCarga(nome: string): string {
   if (nome.startsWith("aparelho")) return "leve à bancada";
@@ -247,6 +276,7 @@ export function GameUI(props: GameUIProps) {
   const [oferta, setOferta] = useState<string | null>(null);
   const [selecaoLocal, setSelecaoLocal] = useState<string | null>(null);
   const [confirmarReinicio, setConfirmarReinicio] = useState(false);
+  const [painelRecolhido, setPainelRecolhido] = useState(false);
   // O fechamento pode ser dispensado para o jogador repor estoque antes de
   // abrir o dia seguinte: o núcleo vai direto de "summary" para o turno novo.
   const [resumoFechado, setResumoFechado] = useState(false);
@@ -258,7 +288,11 @@ export function GameUI(props: GameUIProps) {
 
   useEffect(() => {
     const alvo = ABA_DA_ESTACAO[estacao];
-    if (alvo) setAba(alvo);
+    if (!alvo) return;
+    setAba(alvo);
+    // Chegar numa estação é o momento em que o painel serve para algo: se ele
+    // estava fechado, reabre sozinho em vez de esconder a ação disponível.
+    setPainelRecolhido(false);
   }, [estacao]);
 
   // A resposta da tecla E vem do GameCanvas e usa o mesmo aviso dos botões.
@@ -309,6 +343,18 @@ export function GameUI(props: GameUIProps) {
   const naLoja = clientes.filter((c) => c.status !== "leaving");
   const aguardando = naLoja.filter((c) => c.status === "waiting");
   const emReparo = naLoja.filter((c) => c.status === "repairing");
+
+  // Conserto na bancada agora. Só o que está sendo trabalhado: o que espera
+  // técnico livre já aparece como caixa no chão da assistência.
+  const conserto = (() => {
+    const emAndamento = gameState.repairs.find(
+      (reparo) => reparo.status === "inProgress" && reparo.endTime !== undefined
+    );
+    if (!emAndamento?.endTime) return null;
+    const total = Math.max(0.001, emAndamento.endTime - emAndamento.startTime);
+    const falta = Math.max(0, emAndamento.endTime - gameState.time);
+    return { fracao: Math.min(1, 1 - falta / total), segundos: Math.ceil(falta) };
+  })();
 
   // Seleção: manda o núcleo; se ele ainda não expõe, a tela mantém o foco.
   // Só fica no balcão quem ainda dá para atender — depois da venda o cliente
@@ -409,7 +455,7 @@ export function GameUI(props: GameUIProps) {
   const emTurno = fase === "active";
 
   return (
-    <div className={`ui-root fase-${fase}`}>
+    <div className={`ui-root fase-${fase} ${painelRecolhido ? "ui-root--painel-recolhido" : ""}`}>
       <div className="aviso-orientacao" role="status">
         <span className="aviso-orientacao__icone">↻</span>
         <strong>Gire o celular</strong>
@@ -452,6 +498,12 @@ export function GameUI(props: GameUIProps) {
             </div>
           </div>
         )}
+
+        {/* Quanto falta para o conserto sair. Vive no HUD e não na bancada
+            porque a bancada é o canto mais apertado desta câmera fixa: o
+            jogador, o técnico e a placa disputam os mesmos 40 pixels, e o
+            número ficava sempre atrás de alguém. */}
+        {conserto && <AnelDeConserto fracao={conserto.fracao} segundos={conserto.segundos} />}
 
         <div className="topbar__resumo">
           <div className="resumo-item">
@@ -673,20 +725,46 @@ export function GameUI(props: GameUIProps) {
         )}
       </main>
 
-      {/* ---------- Painel esquerdo: preparação ---------- */}
-      <aside className={`painel painel--esquerda ${emTurno ? "painel--discreto" : ""}`}>
+      {/* ---------- Painel esquerdo: preparação ----------
+          Recolhível: durante o turno o que importa é a loja, e o painel come
+          um quarto da largura. Recolhido ele vira uma faixa fina com as
+          iniciais, para o jogador não perder de onde reabrir. */}
+      <aside
+        className={`painel painel--esquerda ${emTurno ? "painel--discreto" : ""} ${
+          painelRecolhido ? "painel--recolhido" : ""
+        }`}
+      >
+        <button
+          className="painel__alternar"
+          onClick={() => setPainelRecolhido((atual) => !atual)}
+          title={painelRecolhido ? "Abrir o painel" : "Recolher o painel e ver a loja inteira"}
+          aria-expanded={!painelRecolhido}
+        >
+          {painelRecolhido ? "»" : "«"}
+        </button>
+
         <div className="abas">
           {(["estoque", "equipe", "consultor"] as AbaLateral[]).map((valor) => (
             <div className="aba" key={valor}>
               <button
                 className={`btn btn--largo ${aba === valor ? "btn--ativo" : ""}`}
-                onClick={() => setAba(valor)}
+                onClick={() => {
+                  // Clicar numa aba com o painel fechado é pedido para abrir.
+                  if (painelRecolhido) setPainelRecolhido(false);
+                  setAba(valor);
+                }}
+                title={valor === "estoque" ? "Estoque" : valor === "equipe" ? "Equipe" : "Consultor"}
               >
-                {valor === "estoque"
-                  ? "Estoque"
-                  : valor === "equipe"
-                    ? "Equipe"
-                    : "Consultor"}
+                <span className="aba__nome">
+                  {valor === "estoque" ? "Estoque" : valor === "equipe" ? "Equipe" : "Consultor"}
+                </span>
+                {/* Recolhido sobra só o ícone: inicial não serve, "Estoque" e
+                    "Equipe" começam com a mesma letra. */}
+                <span className="aba__icone" aria-hidden="true">
+                  <Icone
+                    d={valor === "estoque" ? ICONES.caixa : valor === "equipe" ? ICONES.equipe : ICONES.alerta}
+                  />
+                </span>
               </button>
               {valor === "consultor" && opportunities.length > 0 && (
                 <span className="aba__contador">{opportunities.length}</span>
@@ -940,37 +1018,32 @@ export function GameUI(props: GameUIProps) {
         )}
       </aside>
 
-      {/* ---------- Painel direito: fila ---------- */}
-      <aside className="painel painel--direita">
-        <div className="card card--magenta">
-          <div className="card__cabecalho">
-            <h2 className="card__titulo">
-              <Icone d={ICONES.raio} /> Fila
-            </h2>
-            <span className="linha__valor">{aguardando.length}</span>
-          </div>
-          <div className="linha">
-            <span className="linha__rotulo">Em reparo</span>
-            <span className="linha__valor valor--ciano">{emReparo.length}</span>
-          </div>
-          <div className="linha">
-            <span className="linha__rotulo">Perdidos (total)</span>
-            <span className="linha__valor valor--negativo">
-              {gameState.missedSales + gameState.missedRepairs}
-            </span>
-          </div>
-        </div>
-
-        {naLoja.length === 0 ? (
+      {/* ---------- Painel direito: fila ----------
+          Loja vazia não tem fila para mostrar, e um painel com três zeros e um
+          "ninguém na loja" só ocupava um terço da tela por cima do salão. Ele
+          aparece com o primeiro cliente e some com o último. */}
+      {naLoja.length > 0 && (
+        <aside className="painel painel--direita">
           <div className="card card--magenta">
-            <p className="vazio">
-              {emTurno
-                ? "Ninguém na loja neste instante."
-                : "A loja abre quando você iniciar o turno."}
-            </p>
+            <div className="card__cabecalho">
+              <h2 className="card__titulo">
+                <Icone d={ICONES.raio} /> Fila
+              </h2>
+              <span className="linha__valor">{aguardando.length}</span>
+            </div>
+            <div className="linha">
+              <span className="linha__rotulo">Em reparo</span>
+              <span className="linha__valor valor--ciano">{emReparo.length}</span>
+            </div>
+            <div className="linha">
+              <span className="linha__rotulo">Perdidos (total)</span>
+              <span className="linha__valor valor--negativo">
+                {gameState.missedSales + gameState.missedRepairs}
+              </span>
+            </div>
           </div>
-        ) : (
-          naLoja.map((c) => (
+
+          {naLoja.map((c) => (
             <CartaoFila
               key={c.id}
               cliente={c}
@@ -978,9 +1051,9 @@ export function GameUI(props: GameUIProps) {
               produto={c.needsProduct ? gameState.products.get(c.needsProduct) : undefined}
               onSelecionar={selecionar}
             />
-          ))
-        )}
-      </aside>
+          ))}
+        </aside>
+      )}
 
       {/* ---------- Fechamento ---------- */}
       {fase === "summary" && !resumoFechado && (

@@ -16,6 +16,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 // createInstance() só existe quando o módulo de instâncias entra no bundle.
 import "@babylonjs/core/Meshes/instancedMesh";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 
 import { GOLES_BEBEDOURO, type GameState } from "../types";
