@@ -159,6 +159,13 @@ function AnelDeConserto({ fracao, segundos }: { fracao: number; segundos: number
   );
 }
 
+/** Abaixo disso o painel lateral vira gaveta por cima da loja (ver styles.css). */
+const LARGURA_GAVETA = 820;
+
+function telaEstreita(): boolean {
+  return typeof window !== "undefined" && window.innerWidth <= LARGURA_GAVETA;
+}
+
 /** Para onde levar o item que está por cima da pilha. */
 function destinoDaCarga(nome: string): string {
   if (nome.startsWith("aparelho")) return "leve à bancada";
@@ -276,7 +283,10 @@ export function GameUI(props: GameUIProps) {
   const [oferta, setOferta] = useState<string | null>(null);
   const [selecaoLocal, setSelecaoLocal] = useState<string | null>(null);
   const [confirmarReinicio, setConfirmarReinicio] = useState(false);
-  const [painelRecolhido, setPainelRecolhido] = useState(false);
+  // No celular deitado o painel é uma gaveta sobre a loja, então ele nasce
+  // fechado: aberto, tapa metade de uma tela de 375px de altura. No desktop ele
+  // nasce aberto, que é onde ele cabe ao lado da loja.
+  const [painelRecolhido, setPainelRecolhido] = useState(telaEstreita);
   // O fechamento pode ser dispensado para o jogador repor estoque antes de
   // abrir o dia seguinte: o núcleo vai direto de "summary" para o turno novo.
   const [resumoFechado, setResumoFechado] = useState(false);
@@ -292,8 +302,18 @@ export function GameUI(props: GameUIProps) {
     setAba(alvo);
     // Chegar numa estação é o momento em que o painel serve para algo: se ele
     // estava fechado, reabre sozinho em vez de esconder a ação disponível.
-    setPainelRecolhido(false);
+    // No celular NÃO: lá ele é gaveta sobre a loja, e abrir sozinho toda vez
+    // que o atendente encosta numa prateleira taparia o jogo.
+    if (!telaEstreita()) setPainelRecolhido(false);
   }, [estacao]);
+
+  // Girar o celular ou redimensionar a janela troca o papel do painel: gaveta
+  // fechada em tela estreita, coluna aberta em tela larga.
+  useEffect(() => {
+    const aoRedimensionar = () => setPainelRecolhido(telaEstreita());
+    window.addEventListener("resize", aoRedimensionar);
+    return () => window.removeEventListener("resize", aoRedimensionar);
+  }, []);
 
   // A resposta da tecla E vem do GameCanvas e usa o mesmo aviso dos botões.
   const acaoNoMapa = props.mapAction;

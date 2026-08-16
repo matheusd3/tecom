@@ -229,6 +229,7 @@ export async function createGameScene(
       if (estado.sales.length > vendasVistas) {
         const venda = estado.sales[estado.sales.length - 1];
         mostrarDinheiro(`+R$ ${venda.price.toFixed(0)}`);
+        loja.pulsarCaixa();
         vendasVistas = estado.sales.length;
       }
       const concluidos = estado.repairs.filter((reparo) => reparo.status === "completed");
@@ -245,6 +246,7 @@ export async function createGameScene(
       equipe.atualizar(dt);
       loja.atualizarPilhas(estado);
       loja.atualizarBebedouro(estado.nivelDoBebedouro);
+      loja.animar(dt);
     },
 
     getPlayerStation() {

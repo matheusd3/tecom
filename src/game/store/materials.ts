@@ -11,9 +11,13 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 /** Paleta da loja: alegre, mas ainda na família ciano/magenta/lima da marca. */
 export const PALETA = {
   fundoCena: "#0b1218",
-  pisoClaro: "#d4e3ea",
-  pisoEscuro: "#82b9cd",
-  rejunte: "#7fb0c2",
+  // O piso desceu um tom de propósito. Ele era quase tão claro quanto as caixas
+  // de mercadoria e os móveis brancos, e nessa faixa de valor as silhuetas se
+  // perdiam vistas de cima — em cena low-poly quem separa as formas é o
+  // contraste de valor, não o detalhe da geometria.
+  pisoClaro: "#bad0db",
+  pisoEscuro: "#74a3b7",
+  rejunte: "#6a94a6",
   paredeBaixa: "#2f4a58",
   paredeAlta: "#4b7286",
   rodape: "#1c2f3a",

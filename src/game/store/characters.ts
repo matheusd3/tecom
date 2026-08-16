@@ -20,6 +20,12 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 
 import { PALETA, cor, fosco, materialIcone, neon } from "./materials";
 
+// Contorno (`mesh.renderOutline`) foi tentado aqui e REPROVADO: o boneco é uma
+// pilha de cápsulas e esferas que se interpenetram, e o contorno do Babylon é
+// uma cópia inflada desenhada por trás — o do cabelo cobria o rosto, o do
+// tronco engolia os braços. Contorno só vale para malha única; a leitura das
+// pessoas aqui vem do tamanho (raiz.scaling 1,45), da cor da roupa e da sombra.
+
 export type TipoCarga = "produto" | "aparelho" | "caixa" | "galao";
 export type TipoPedido = "produto" | "reparo" | "feliz" | "bravo";
 

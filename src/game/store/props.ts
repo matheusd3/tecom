@@ -53,6 +53,10 @@ export interface Loja {
   atualizarPilhas(estado: GameState): void;
   /** Acerta a coluna de água e a régua do piso com os goles que restam. */
   atualizarBebedouro(nivel: number): void;
+  /** Estala o terminal do balcão quando uma venda fecha. */
+  pulsarCaixa(): void;
+  /** Anima o que a cena tem de vivo (só o estalo da caixa, por enquanto). */
+  animar(deltaSeconds: number): void;
 }
 
 interface Tapete {
@@ -92,6 +96,56 @@ function blocoDoRetangulo(
     { x: c.x, y: baseY + altura / 2, z: c.z },
     material
   );
+}
+
+/**
+ * Sombra de contato dos móveis.
+ *
+ * Sem ela todo móvel parece flutuar um dedo acima do piso — é o defeito
+ * clássico de cena low-poly sem sombra projetada, e resolver custa um quad por
+ * móvel. A textura é um retângulo de bordas esfumadas (retângulos concêntricos
+ * com alpha crescente, que é blur suficiente nesta escala) e é compartilhada:
+ * cada móvel só a estica sobre a própria pegada.
+ */
+function texturaDeSombra(scene: Scene): StandardMaterial {
+  const lado = 128;
+  const textura = new DynamicTexture("texSombra", { width: lado, height: lado }, scene, true);
+  const ctx = textura.getContext() as unknown as CanvasRenderingContext2D;
+  ctx.clearRect(0, 0, lado, lado);
+  const passos = 16;
+  for (let i = passos; i >= 1; i--) {
+    const margem = (i / passos) * (lado * 0.22);
+    ctx.fillStyle = `rgba(0, 0, 0, ${0.055})`;
+    ctx.fillRect(margem, margem, lado - margem * 2, lado - margem * 2);
+  }
+  textura.update();
+  textura.hasAlpha = true;
+
+  const m = new StandardMaterial("matSombraMovel", scene);
+  m.diffuseColor = Color3.Black();
+  m.specularColor = Color3.Black();
+  m.emissiveColor = Color3.Black();
+  m.diffuseTexture = textura;
+  m.opacityTexture = textura;
+  m.disableLighting = true;
+  m.freeze();
+  return m;
+}
+
+/** Estica a sombra compartilhada sobre a pegada de um móvel. */
+function sombraDoMovel(scene: Scene, material: StandardMaterial, r: Retangulo, margem = 0.55): void {
+  const c = centro(r);
+  const chao = CreateGround(
+    `sombra-${c.x.toFixed(1)}-${c.z.toFixed(1)}`,
+    { width: largura(r) + margem * 2, height: profundidade(r) + margem * 2 },
+    scene
+  );
+  // Acima dos tapetes (0,02) para não brigar por z, e abaixo de tudo que fica
+  // em pé no chão.
+  chao.position.set(c.x, 0.035, c.z);
+  chao.material = material;
+  chao.isPickable = false;
+  chao.freezeWorldMatrix();
 }
 
 /** Fábrica de caixinhas de produto: a primeira de cada cor vira o molde. */
@@ -153,8 +207,12 @@ export function construirLoja(scene: Scene): Loja {
   const letreiros = new Map<Estacao, StandardMaterial>();
 
   piso(scene, mats, tapetes);
+  // As sombras entram logo depois do piso e antes dos móveis: elas são o que
+  // "cola" cada móvel no chão nesta câmera sem sombra projetada.
+  const matSombra = texturaDeSombra(scene);
+  for (const movel of Object.values(MOVEIS)) sombraDoMovel(scene, matSombra, movel);
   paredes(scene, mats);
-  balcao(scene, mats, letreiros);
+  const caixa = balcao(scene, mats, letreiros);
   bancadaTecnica(scene, mats, letreiros);
   estoque(scene, mats, letreiros);
   const galao = bebedouro(scene, mats, letreiros);
@@ -164,6 +222,8 @@ export function construirLoja(scene: Scene): Loja {
   return {
     atualizarPilhas: pilhas.atualizar,
     atualizarBebedouro: galao.atualizar,
+    pulsarCaixa: caixa.pulsar,
+    animar: caixa.animar,
 
     destacarZona(estacao) {
       for (const [id, tapete] of tapetes) {
@@ -481,7 +541,11 @@ function paredes(scene: Scene, mats: Materiais): void {
 
 // --------------------------------------------------------------- balcão
 
-function balcao(scene: Scene, mats: Materiais, letreiros: Map<Estacao, StandardMaterial>): void {
+function balcao(
+  scene: Scene,
+  mats: Materiais,
+  letreiros: Map<Estacao, StandardMaterial>
+): { pulsar(): void; animar(dt: number): void } {
   const r = MOVEIS.balcao;
   const c = centro(r);
 
@@ -519,7 +583,10 @@ function balcao(scene: Scene, mats: Materiais, letreiros: Map<Estacao, StandardM
   const tela = CreatePlane("pdv-tela", { width: 1.05, height: 0.65 }, scene);
   tela.parent = monitorPdv;
   tela.position.set(0, 0, -0.06);
-  tela.material = mats.telaCiano;
+  // Material próprio: o estalo da venda acende esta tela, e o telaCiano
+  // compartilhado faria piscar todos os monitores da loja junto.
+  const matTelaPdv = neon(scene, "matTelaPdv", PALETA.ciano, 0.75);
+  tela.material = matTelaPdv;
 
   // Maquininha e potinho de canetas: vida na bancada.
   bloco(scene, "pdv-pinpad", { l: 0.3, a: 0.1, p: 0.45 }, { x: r.maxX - 2.6, y: 1.18, z: c.z - 0.35 }, mats.metalEscuro);
@@ -548,6 +615,35 @@ function balcao(scene: Scene, mats: Materiais, letreiros: Map<Estacao, StandardM
     haste.material = mats.metalEscuro;
     haste.freezeWorldMatrix();
   }
+
+  // Estalo da venda: o monitor do PDV dá um pulo curto e a tela pisca. O número
+  // subindo já dizia QUANTO entrou; faltava o "tim" que diz que entrou AGORA —
+  // e o balcão é onde o olho do jogador está no momento da venda.
+  const DURACAO_PULSO = 0.32;
+  const telaBase = matTelaPdv.emissiveColor.clone();
+  let pulso = 0;
+  // O monitor não pode ficar com a matriz congelada: ele encolhe e volta.
+  monitorPdv.unfreezeWorldMatrix();
+
+  return {
+    pulsar() {
+      pulso = DURACAO_PULSO;
+    },
+    animar(dt) {
+      if (pulso <= 0) return;
+      pulso = Math.max(0, pulso - dt);
+      const t = pulso / DURACAO_PULSO;
+      // Sobe rápido e volta devagar, senão o estalo parece um tremor.
+      const forca = Math.sin(t * Math.PI);
+      const escala = 1 + forca * 0.22;
+      monitorPdv.scaling.set(escala, escala, escala);
+      matTelaPdv.emissiveColor = telaBase.scale(1 + forca * 1.6);
+      if (pulso === 0) {
+        monitorPdv.scaling.set(1, 1, 1);
+        matTelaPdv.emissiveColor = telaBase.clone();
+      }
+    },
+  };
 }
 
 // ---------------------------------------------------------- assistência

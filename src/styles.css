@@ -1851,52 +1851,123 @@ button {
 }
 
 @media (max-width: 820px) and (orientation: landscape) {
-  .painel {
+  /* Celular deitado escondia os DOIS painéis, e com eles sumiam comprar
+     estoque, ajustar preço, contratar e o consultor inteiro — sobrava andar e
+     apertar E. Agora o painel esquerdo vira gaveta: nasce recolhido numa faixa
+     de ícones e abre por cima da loja quando o jogador toca. */
+  .painel--direita {
     display: none;
   }
 
-  .palco {
-    left: 0;
-    right: 0;
+  /* A largura vem de variável, não de regra por estado: `.painel { width: 100% }`
+     deste mesmo breakpoint é irmão em especificidade e vinha depois, então
+     disputar a cascata aqui só dava dor de cabeça. */
+  .ui-root {
+    --largura-esquerda: 300px;
+  }
+
+  .ui-root--painel-recolhido {
+    --largura-esquerda: 54px;
+  }
+
+  .painel--esquerda {
     top: var(--topo-total);
     bottom: 0;
-    padding: 10px 14px;
+    height: auto;
+    width: var(--largura-esquerda);
+    /* Em tela estreita a gaveta encolhe junto e nunca engole a loja inteira. */
+    max-width: 70%;
+    border-right: 1px solid var(--borda);
+    border-top: 0;
+    z-index: 6;
+  }
+
+  /* Aberto ele cobre parte da loja de propósito: numa tela de 375px de altura
+     não existe espaço para dividir, e a decisão de compra é modal por natureza. */
+  .painel--esquerda:not(.painel--recolhido) {
+    box-shadow: 12px 0 28px rgba(0, 0, 0, 0.45);
+  }
+
+  .painel--recolhido {
+    padding: 8px 5px;
+  }
+
+  /* O palco volta a ocupar a tela toda: quem divide o espaço agora é a gaveta. */
+  .palco {
+    top: var(--topo-total);
+    bottom: 0;
+  }
+
+  /* Caixa e meta somem acima de 980px de largura, mas no celular são a única
+     leitura de dinheiro que sobra — voltam em versão compacta. */
+  .topbar__resumo {
+    display: flex;
+    gap: 8px;
+  }
+
+  .topbar__resumo .resumo-item:nth-child(n + 3) {
+    display: none;
+  }
+
+  .resumo-item__rotulo {
+    font-size: 8px;
+  }
+
+  .resumo-item__valor {
+    font-size: 12px;
+  }
+
+  /* O palco para acima dos controles de toque: o cartão de atendimento estava
+     desenhado por cima do botão INTERAGIR (o .palco vem depois no DOM), e no
+     celular isso é o botão mais importante da tela. */
+  .palco {
+    left: 54px;
+    right: 0;
+    bottom: 120px;
+    padding: 8px 12px;
     justify-content: flex-end;
   }
 
   .palco__card {
-    width: min(340px, 42vw);
-    max-height: calc(100vh - var(--topo-total) - 18px);
-    padding: 12px;
+    width: min(340px, 46vw);
+    max-height: 100%;
+    padding: 10px 12px;
+  }
+
+  /* E, por garantia, os controles ficam acima de qualquer cartão. */
+  .controles-toque {
+    z-index: 7;
   }
 
   .controles-jogo {
     top: calc(var(--topo-total) + 8px);
-    left: 12px;
+    left: 66px;
   }
 
   .controles-toque {
     bottom: 10px;
-    left: 14px;
+    left: 66px;
     right: 14px;
   }
 
+  /* Alvo de toque de 35px é menor que a ponta de um polegar; 42 é o mínimo que
+     se acerta sem olhar, e é para não olhar que eles existem. */
   .direcional {
-    width: 104px;
-    height: 104px;
+    width: 126px;
+    height: 126px;
   }
 
   .direcional__botao {
-    width: 35px;
-    height: 35px;
-    border-radius: 9px;
-    font-size: 13px;
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    font-size: 14px;
   }
 
-  .direcional__cima { left: 35px; }
-  .direcional__esquerda { top: 35px; }
-  .direcional__direita { top: 35px; }
-  .direcional__baixo { left: 35px; }
+  .direcional__cima { left: 42px; }
+  .direcional__esquerda { top: 42px; }
+  .direcional__direita { top: 42px; }
+  .direcional__baixo { left: 42px; }
 
   .botao-interagir {
     min-height: 54px;
