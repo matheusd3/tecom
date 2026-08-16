@@ -938,10 +938,12 @@ export function GameUI(props: GameUIProps) {
                   title={
                     vagasAuxiliar === 0
                       ? `A loja comporta ${LIMITE_EQUIPE.seller} auxiliares`
-                      : `Contratar por ${formatarMoeda(SALARIOS.seller * 2)}`
+                      : `Contratar por ${formatarMoeda(SALARIOS.seller)}`
                   }
                 >
-                  + Atendente auxiliar ({vagasAuxiliar}/{LIMITE_EQUIPE.seller})
+                  {/* "Atendente auxiliar" não cabe em meia largura; o texto
+                      completo do cargo está na nota logo abaixo dos botões. */}
+                  + Auxiliar ({vagasAuxiliar}/{LIMITE_EQUIPE.seller})
                 </button>
                 <button
                   className="btn btn--largo"
@@ -950,7 +952,7 @@ export function GameUI(props: GameUIProps) {
                   title={
                     vagasTecnico === 0
                       ? `A bancada comporta ${LIMITE_EQUIPE.technician} técnicos`
-                      : `Contratar por ${formatarMoeda(SALARIOS.technician * 2)}`
+                      : `Contratar por ${formatarMoeda(SALARIOS.technician)}`
                   }
                 >
                   + Técnico ({vagasTecnico}/{LIMITE_EQUIPE.technician})

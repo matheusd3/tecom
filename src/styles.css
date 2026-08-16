@@ -603,10 +603,23 @@ button {
   color: var(--lima);
 }
 
+/* Grade 2×2: eram dois cargos, viraram quatro (gerente e consultor), e em
+   linha única eles vazavam para fora do painel. */
 .acoes {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: 10px;
+}
+
+/* Em meia largura o rótulo não pode empurrar a caixa: `nowrap` vem do .btn e,
+   sem isto, texto comprido estoura a célula da grade em vez de cortar. */
+.acoes .btn {
+  min-width: 0;
+  padding-left: 8px;
+  padding-right: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------- Estoque ---------- */
