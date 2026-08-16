@@ -21,10 +21,28 @@ import {
 } from "./types";
 import { GOLES_BEBEDOURO } from "./types";
 
-const MONTH_SECONDS = 14_400; // 30 dias de jogo, com 1 dia = 8 minutos
-const CUSTOMER_PATIENCE_PER_SECOND = 0.38;
+/** Salário é mensal e o turno é um dia: a folha diária é um trinta avos. */
+const DIAS_DO_MES = 30;
+/**
+ * Queda de paciência por segundo.
+ *
+ * Era 0,38, e com paciência sorteada entre 55 e 100 isso dava 145 a 263 s de
+ * espera — mais que o turno inteiro, de 120 s. Ou seja: ninguém desistia jamais,
+ * e a fila era um enfeite sem risco. Em 0,95 o cliente tranquilo aguenta ~58 a
+ * 105 s e o apressado bem menos, então deixar a fila crescer passa a custar.
+ */
+const CUSTOMER_PATIENCE_PER_SECOND = 0.95;
+/**
+ * Chegada de cliente. O intervalo aperta com o dia porque a loja precisa, em
+ * algum momento, pedir mais gente do que uma pessoa entrega — sem isso
+ * contratar nunca vira necessidade, só enfeite.
+ */
 const CUSTOMER_SPAWN_MIN_SECONDS = 7;
 const CUSTOMER_SPAWN_MAX_SECONDS = 15;
+const CUSTOMER_SPAWN_MIN_FINAL = 2;
+const CUSTOMER_SPAWN_MAX_FINAL = 5;
+/** Dia em que a chegada atinge o ritmo máximo. */
+const DIA_DEMANDA_CHEIA = 8;
 const CAPACIDADE_PRATELEIRA = 10;
 /**
  * Catálogo em três camadas. O `tier` é liberado pelo dia (ver `tierLiberado`) e
@@ -43,7 +61,7 @@ const CATALOGO_MELHORIAS: Upgrade[] = [
   { id: "carrinhoAtendimento", nome: "Carrinho de atendimento", descricao: "Sobe para 3 itens por vez — dá para montar duas vendas na mesma volta.", custo: 2800, requer: ["cestaAtendimento"], tier: 2, resolve: "movimento" },
   { id: "bancadaRapida", nome: "Bancada com testes", descricao: "Reparos levam 25% menos tempo.", custo: 3000, requer: [], tier: 2, resolve: "reparo" },
   // Camada 3 — a partir do dia 5, quando o caixa já aguenta.
-  { id: "segundoBalcao", nome: "Segundo balcão", descricao: "A fila comporta até 5 clientes.", custo: 3500, requer: [], tier: 3, resolve: "fila" },
+  { id: "segundoBalcao", nome: "Segundo balcão", descricao: "A fila comporta mais 2 clientes ao mesmo tempo.", custo: 3500, requer: [], tier: 3, resolve: "fila" },
   { id: "carrinhoDuplo", nome: "Carrinho duplo", descricao: "Sobe para 4 itens por vez: a loja inteira cabe numa volta só.", custo: 4200, requer: ["carrinhoAtendimento"], tier: 3, resolve: "movimento" },
 ];
 /** Quantos itens o atendente leva de uma vez, por melhoria da linha. */
@@ -97,7 +115,6 @@ export class GameWorld {
   private customerSpawnTimer = 0;
   private nextCustomerSpawn = this.randomBetween(CUSTOMER_SPAWN_MIN_SECONDS, CUSTOMER_SPAWN_MAX_SECONDS);
   private opportunityCheckTimer = 0;
-  private lastPayrollMonth = 0;
   private lastOpportunityAt = new Map<string, number>();
   private shiftStartRevenue = 0;
   private shiftStartExpenses = 0;
@@ -140,7 +157,6 @@ export class GameWorld {
       const cliente = this.state.customers.get(this.state.pendingDiscount.customerId);
       if (!cliente || cliente.status !== "waiting") this.state.pendingDiscount = undefined;
     }
-    this.processPayroll();
     this.updateDemand(elapsed);
     this.updateAverages();
 
@@ -283,7 +299,9 @@ export class GameWorld {
   public hireEmployee(role: EmployeeRole, name: string): boolean {
     if (this.vagasRestantes(role) === 0) return false;
     const salary = role === "seller" ? 2_000 : role === "technician" ? 2_500 : 3_000;
-    const onboardingCost = salary * 2;
+    // Um salário de entrada, não dois: agora existe folha todo dia, e cobrar
+    // caro na porta E todo dia deixaria a primeira contratação fora de alcance.
+    const onboardingCost = salary;
     if (this.state.cash < onboardingCost) return false;
 
     const id = `employee-${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
@@ -567,7 +585,6 @@ export class GameWorld {
     this.opportunities = [];
     this.customerSpawnTimer = 0;
     this.opportunityCheckTimer = 0;
-    this.lastPayrollMonth = 0;
     this.lastOpportunityAt.clear();
     this.customerSequence = 0;
     this.shiftHighlights = [];
@@ -602,7 +619,7 @@ export class GameWorld {
       shiftDuration: SHIFT_DURATION, shiftTimeRemaining: SHIFT_DURATION, dailyGoal: 900, reputation: 60,
       cash: 10_000,
       shiftRevenue: 0, shiftProfit: 0,
-      totalRevenue: 0, totalExpenses: 0, monthlyRevenue: 0, monthlyExpenses: 0,
+      totalRevenue: 0, totalExpenses: 0,
       products, employees, customers: new Map(), sales: [], repairs: [],
       missedSales: 0, missedRepairs: 0, idleEmployeeTime: 0,
       customerSatisfactionAvg: 80, employeeHappinessAvg: 79,
@@ -612,7 +629,7 @@ export class GameWorld {
   }
 
   private generateCustomers(elapsed: number): void {
-    if (Array.from(this.state.customers.values()).filter((customer) => customer.status === "waiting").length >= (this.temUpgrade("segundoBalcao") ? 5 : 3)) return;
+    if (Array.from(this.state.customers.values()).filter((customer) => customer.status === "waiting").length >= this.tetoDaFila()) return;
     this.customerSpawnTimer += elapsed;
     if (this.customerSpawnTimer < this.nextCustomerSpawn) return;
     this.customerSpawnTimer = 0;
@@ -881,6 +898,9 @@ export class GameWorld {
       );
     }
     this.analyzeOpportunities();
+    // A folha entra ANTES de fechar os números do dia: ela é despesa do turno
+    // que acabou e precisa aparecer no lucro que o jogador vai ler.
+    const folha = this.cobrarFolhaDoDia();
     const revenue = this.state.totalRevenue - this.shiftStartRevenue;
     const profit = this.state.shiftProfit - (this.state.totalExpenses - this.shiftStartExpenses);
     const sales = this.state.sales.length - this.shiftStartSales;
@@ -889,7 +909,7 @@ export class GameWorld {
     const goalReached = revenue >= this.state.dailyGoal;
     if (goalReached) this.state.reputation = Math.min(100, this.state.reputation + 5);
     this.shiftReport = {
-      day: this.state.day, goal: this.state.dailyGoal, revenue, profit, sales, repairs, customersLost,
+      day: this.state.day, goal: this.state.dailyGoal, revenue, profit, sales, repairs, customersLost, folha,
       reputationChange: this.state.reputation - this.shiftStartReputation,
       goalReached, topOpportunity: this.opportunities[0], highlights: [...this.shiftHighlights],
     };
@@ -900,16 +920,33 @@ export class GameWorld {
     this.state.upgradesOferecidos = this.sortearOfertas();
   }
 
-  private processPayroll(): void {
-    const currentMonth = Math.floor(this.state.time / MONTH_SECONDS);
-    if (currentMonth <= this.lastPayrollMonth) return;
-    this.lastPayrollMonth = currentMonth;
-    this.state.monthlyRevenue = 0;
-    this.state.monthlyExpenses = 0;
-    const salaries = Array.from(this.state.employees.values()).reduce((total, employee) => total + employee.salary, 0);
-    this.recordExpense(salaries);
-    if (this.state.cash >= 0) return;
-    for (const employee of this.state.employees.values()) employee.happiness = Math.max(0, employee.happiness - 15);
+  /**
+   * Folha do dia, cobrada no fechamento de cada turno.
+   *
+   * Era mensal, e mês aqui são `MONTH_SECONDS` = 120 turnos: na prática o
+   * jogador contratava uma vez e nunca mais pagava, o que fazia da equipe uma
+   * compra sem consequência. Salário é mensal, o turno é um dia — então o dia
+   * custa um trinta avos. O custo de entrada caiu junto (ver `hireEmployee`),
+   * senão contratar passaria a doer duas vezes.
+   *
+   * O jogador é o vendedor da casa e não entra na folha.
+   */
+  private cobrarFolhaDoDia(): number {
+    const total = Array.from(this.state.employees.values())
+      .filter((employee) => employee.id !== "seller-1")
+      .reduce((soma, employee) => soma + employee.salary / DIAS_DO_MES, 0);
+    if (total <= 0) return 0;
+    const folha = Math.round(total * 100) / 100;
+    this.recordExpense(folha);
+    if (this.state.cash < 0) {
+      // Caixa negativo continua sendo o que derruba o ânimo, agora todo dia em
+      // que o buraco existir — e não uma vez a cada 120 turnos.
+      for (const employee of this.state.employees.values()) {
+        employee.happiness = Math.max(0, employee.happiness - 6);
+      }
+      this.addHighlight("Caixa negativo no fechamento: a equipe sentiu.");
+    }
+    return folha;
   }
 
   private analyzeOpportunities(): void {
@@ -989,14 +1026,12 @@ export class GameWorld {
   private recordRevenue(value: number): void {
     this.state.cash += value;
     this.state.totalRevenue += value;
-    this.state.monthlyRevenue += value;
     this.state.shiftRevenue += value;
   }
 
   private recordExpense(value: number): void {
     this.state.cash -= value;
     this.state.totalExpenses += value;
-    this.state.monthlyExpenses += value;
   }
 
   private randomBetween(min: number, max: number): number {
@@ -1015,7 +1050,25 @@ export class GameWorld {
       if (this.state.nivelDoBebedouro > 0) { this.state.nivelDoBebedouro--; employee.happiness = Math.min(100, employee.happiness + 8); }
     }
   }
-  private proximoSpawnCliente(): number { return this.temUpgrade("letreiroRua") ? this.randomBetween(5, 11) : this.randomBetween(CUSTOMER_SPAWN_MIN_SECONDS, CUSTOMER_SPAWN_MAX_SECONDS); }
+  /** Fração do caminho entre a demanda do dia 1 e a demanda cheia. */
+  private pressaoDoDia(): number {
+    return Math.max(0, Math.min(1, (this.state.day - 1) / (DIA_DEMANDA_CHEIA - 1)));
+  }
+
+  /** Quantos clientes cabem na fila hoje. Cresce a cada três dias. */
+  public tetoDaFila(): number {
+    return 3 + Math.floor((this.state.day - 1) / 3) + (this.temUpgrade("segundoBalcao") ? 2 : 0);
+  }
+
+  private proximoSpawnCliente(): number {
+    const t = this.pressaoDoDia();
+    const min = CUSTOMER_SPAWN_MIN_SECONDS + (CUSTOMER_SPAWN_MIN_FINAL - CUSTOMER_SPAWN_MIN_SECONDS) * t;
+    const max = CUSTOMER_SPAWN_MAX_SECONDS + (CUSTOMER_SPAWN_MAX_FINAL - CUSTOMER_SPAWN_MAX_SECONDS) * t;
+    // O letreiro corta um terço da espera, em cima do ritmo do dia — antes ele
+    // era um valor fixo que, dias adiante, chegava a ser mais lento que o normal.
+    const fator = this.temUpgrade("letreiroRua") ? 0.68 : 1;
+    return this.randomBetween(min * fator, max * fator);
+  }
   /** Camada mais alta do catálogo que o dia atual libera. */
   private tierLiberado(): number {
     if (this.state.day <= 2) return 1;

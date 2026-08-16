@@ -28,6 +28,13 @@ const VELOCIDADE_AUXILIAR = 5.2;
 /** Distância para considerar que chegou no ponto. */
 const TOLERANCIA = 0.25;
 
+/**
+ * Ânimo abaixo disto acende o balão de cansaço. É o mesmo limiar em que o
+ * `GameWorld` começa a trabalhar 25% mais devagar (`duracaoDoFuncionario`) —
+ * o aviso na cena e a penalidade têm de nascer no mesmo ponto.
+ */
+const LIMITE_CANSACO = 40;
+
 export interface Equipe {
   atualizar(deltaSeconds: number): void;
   dispose(): void;
@@ -182,6 +189,13 @@ export function criarEquipe(fabrica: FabricaDePessoas, world: { getState(): Game
           membro.personagem.raiz.rotation.y = posto.giro;
           membros.set(employee.id, membro);
         }
+
+        // Cansaço visível: abaixo de 40 de ânimo o funcionário já trabalha 25%
+        // mais devagar, e abaixo de 20 para de aceitar tarefa nova. Sem o balão
+        // isso só existia como número no painel — o jogador via a loja
+        // emperrando sem descobrir o motivo. Mesmo mecanismo do pedido do
+        // cliente, com a nuvem no lugar do ícone de produto.
+        membro.personagem.definirPedido(employee.happiness < LIMITE_CANSACO ? "bravo" : null);
 
         if (tecnico) {
           // Técnico não sai da bancada: o conserto acontece ali.

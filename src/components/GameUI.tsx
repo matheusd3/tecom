@@ -1442,6 +1442,14 @@ function ModalFechamento({
                   {relatorio.customersLost}
                 </strong>
               </div>
+              {/* A folha sai do caixa no fechamento; dinheiro que some sem
+                  aparecer é justamente o que o CLAUDE.md proíbe. */}
+              <div className="kpi">
+                <span className="kpi__rotulo">Folha do dia</span>
+                <strong className={`kpi__valor ${relatorio.folha > 0 ? "valor--negativo" : ""}`}>
+                  {relatorio.folha > 0 ? `-${formatarMoeda(relatorio.folha)}` : "sem equipe"}
+                </strong>
+              </div>
               <div className="kpi">
                 <span className="kpi__rotulo">Reputação</span>
                 <strong

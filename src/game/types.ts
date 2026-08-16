@@ -184,8 +184,6 @@ export interface GameState {
   cash: number;
   totalRevenue: number;
   totalExpenses: number;
-  monthlyRevenue: number;
-  monthlyExpenses: number;
   products: Map<ProductType, Product>;
   employees: Map<string, Employee>;
   customers: Map<string, Customer>;
@@ -238,6 +236,8 @@ export interface ShiftReport {
   sales: number;
   repairs: number;
   customersLost: number;
+  /** Salários do dia. Sai do caixa no fechamento, então precisa aparecer. */
+  folha: number;
   reputationChange: number;
   goalReached: boolean;
   topOpportunity?: Opportunity;

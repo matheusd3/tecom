@@ -10,9 +10,10 @@ decisão — e para tirar da frente o que virou clique repetido.
 
 ---
 
-## 1. Diagnóstico: por que ninguém precisa contratar
+## 1. Diagnóstico: por que ninguém precisava contratar
 
-Não é impressão de quem joga, são três números do código:
+Não era impressão de quem jogou, eram três números do código. Os dois primeiros
+já foram corrigidos (seção 2); o do gerente é a seção 5 e continua valendo.
 
 - **A folha quase nunca é cobrada.** `processPayroll` dispara a cada
   `MONTH_SECONDS = 14_400` s de jogo. Com `SHIFT_DURATION = 120`, isso é **um
@@ -31,12 +32,38 @@ isso**: ela aumentou de propósito a vazão de uma pessoa só. Ela não está er
 
 ---
 
-## 2. Ritmo: a fila tem de passar do que uma pessoa aguenta
+## 2. Ritmo: a fila tem de passar do que uma pessoa aguenta — ✅ FEITO
+
+> **Esta seção já está implementada.** Ficou registrada com os números medidos
+> porque é a base de tudo que vem depois; o resto do documento continua sendo
+> trabalho a fazer.
+>
+> **A causa que faltava no diagnóstico:** a paciência nunca acabava dentro do
+> turno. Com `CUSTOMER_PATIENCE_PER_SECOND = 0,38` e paciência sorteada entre 55
+> e 100, o cliente aguentava de 145 a 263 s — mais que o turno inteiro, de 120 s.
+> Ninguém desistia nunca, e a fila era um enfeite sem risco. Agora são 0,95, e o
+> cliente apressado dura ~42 s.
+>
+> **Medido por simulação**, com um jogador que age a cada 6 s (proxy do tempo de
+> andar e decidir), ao longo de 7 dias:
+>
+> | | perdidos | servidos |
+> |---|---|---|
+> | sozinho | 10 (d6:3, d7:5) | 87 |
+> | + 1 vendedor | **0** | 85 |
+> | + vendedor + técnico | 4 | 98 |
+>
+> Contratar deixou de ser enfeite: um vendedor zera a perda. Em receita de 7
+> dias, R$ 43k sozinho contra R$ 58k com equipe — a folha se paga.
+>
+> **Ressalva honesta:** isso é simulação com um proxy de perícia do jogador, não
+> partida jogada. O número a confirmar jogando é o dia em que a perda começa a
+> doer; se vier cedo demais, o botão a girar é `CUSTOMER_SPAWN_*_FINAL`.
 
 Duas alavancas, e as duas precisam andar juntas. Só encher a fila deixa o jogo
 injusto; só cobrar a folha deixa o jogo pobre.
 
-### 2.1 A folha passa a pesar todo dia
+### 2.1 A folha passa a pesar todo dia — feito
 
 Trocar a cobrança mensal por **cobrança no fechamento de cada turno**:
 `salary / 30` por funcionário (o salário é mensal, o turno é um dia).
@@ -50,15 +77,20 @@ Como a despesa virou recorrente, o custo de entrada cai de `salary * 2` para
 O relatório de fechamento precisa mostrar essa linha separada. Número que sai do
 caixa sem aparecer é exatamente o que o `CLAUDE.md` proíbe.
 
-### 2.2 A demanda cresce com o dia
+### 2.2 A demanda cresce com o dia — feito
 
-- Teto da fila: `3 + floor(dia / 3)`, somando o `segundoBalcao` como hoje.
-- Intervalo de chegada: interpolar de 7–15 s no dia 1 até 4–9 s no dia 8.
-- A reputação continua influenciando, e `letreiroRua` continua acelerando.
+Como ficou:
 
-**Critério de pronto do ritmo:** por volta do **dia 4**, um jogador competente
-jogando sozinho deve perder cliente por espera. Não "pode perder" — deve. É esse
-o momento em que contratar deixa de ser opcional.
+- Teto da fila: `3 + floor((dia - 1) / 3)`, e o `segundoBalcao` soma **+2** em
+  cima disso (antes ele fixava o teto em 5, o que dias adiante virava piora).
+- Intervalo de chegada: interpola de 7–15 s no dia 1 até **2–5 s** no dia 8
+  (`pressaoDoDia()`). O `letreiroRua` virou um fator de 0,68 sobre o ritmo do
+  dia, e não mais um valor fixo que ficava lento no fim do jogo.
+- Paciência: `CUSTOMER_PATIENCE_PER_SECOND` de 0,38 para **0,95**.
+
+**Botão de ajuste:** se jogando ficar duro demais, mexa em
+`CUSTOMER_SPAWN_MIN_FINAL` / `CUSTOMER_SPAWN_MAX_FINAL` antes de mexer na
+paciência — a paciência é o que dá risco à fila, e afrouxá-la desfaz a fase.
 
 ---
 
@@ -161,13 +193,15 @@ ganha `nivelDoCafe` + `reporCafe()`.
 
 ---
 
-## 8. Pendências herdadas da Fase 4
+## 8. Pendências herdadas da Fase 4 — ✅ FEITO
 
-- **Ícone de cansaço na cena.** A seção 2 da Fase 4 pedia gotinha sobre a cabeça
-  de quem está abaixo de 40 de ânimo. A mecânica está pronta (`cansar()`, o
-  ritmo 25% mais lento, o corte em 20), mas `store/staff.ts` não desenha nada —
-  o ânimo só aparece no painel. O mecanismo é o mesmo do balão de pedido
-  (`definirPedido`), com outra textura.
+- **Ícone de cansaço na cena** — implementado. Abaixo de 40 de ânimo o balão do
+  funcionário acende com o ícone de nuvem (`definirPedido("bravo")` em
+  `store/staff.ts`), no mesmo limiar em que o `GameWorld` já o fazia trabalhar
+  25% mais devagar. A constante `LIMITE_CANSACO` existe para os dois lados não
+  divergirem.
+
+Com isso a Fase 4 está inteira.
 
 ---
 
@@ -191,14 +225,14 @@ Coisas que entraram nas últimas sessões e que é fácil desfazer sem perceber:
 
 ## 10. Ordem sugerida
 
-1. Folha por turno + demanda que cresce (seção 2) — é o que dá sentido a tudo
-   que vem depois, e dá para sentir na hora.
-2. Gerente de verdade (seção 5), porque é o primeiro cargo que compensa.
+1. ~~Folha por turno + demanda que cresce (seção 2)~~ — feito.
+2. Gerente de verdade (seção 5). **Comece por aqui**: é o primeiro cargo que
+   compensa, e o ritmo já está preparado para ele.
 3. Cartão de aprovação com valor preenchido e ágio (seção 3), já com o gerente
    podendo assumir.
 4. Consultor como contratação (seção 4).
 5. Café consumível (seção 7) e as melhorias de `skill` (seção 6).
-6. Ícone de cansaço (seção 8).
+6. ~~Ícone de cansaço (seção 8)~~ — feito.
 
 `npm run check` e `npm run build` a cada etapa, e um turno completo jogado no
 navegador antes de dar por pronto.
@@ -207,9 +241,11 @@ navegador antes de dar por pronto.
 
 ## 11. Critério de pronto da fase
 
-- No **dia 4**, jogando sozinho e bem, o jogador perde cliente por espera.
-- Contratar o primeiro atendente muda isso de forma perceptível no mesmo dia.
-- O relatório de fechamento mostra a folha do dia como linha própria.
+- ~~No dia 4, jogando sozinho e bem, o jogador perde cliente por espera.~~ Medido
+  em simulação (ver seção 2); falta confirmar jogando.
+- ~~Contratar o primeiro atendente muda isso de forma perceptível.~~ Medido: um
+  vendedor zera a perda de 7 dias.
+- ~~O relatório de fechamento mostra a folha do dia como linha própria.~~ Feito.
 - Com gerente contratado, nenhum cartão de preço interrompe o turno, e o feed
   diz o que ele aprovou.
 - Sem consultor contratado, a aba explica como contratar e ainda dá um alerta
