@@ -64,7 +64,12 @@ const CATALOGO_MELHORIAS: Upgrade[] = [
   { id: "treinamentoBancada", nome: "Treinamento da bancada", descricao: "+15 de habilidade para técnicos atuais e futuros.", custo: 2800, requer: [], tier: 2, resolve: "reparo" },
   { id: "manualAtendimento", nome: "Manual de atendimento", descricao: "+15 de habilidade para vendedores e gerente; melhora as aprovações.", custo: 2600, requer: [], tier: 2, resolve: "fila" },
   // `resolve` é o gargalo que a melhoria RESOLVE, e o sênior não faz nada pelo
-  { id: "consultorSenior", nome: "Consultor sênior", descricao: "Amplia os apontamentos do consultor e refina a estimativa de lucro.", custo: 2400, requer: [], tier: 2, resolve: "equipe" },
+  // `resolve` é o gargalo que a melhoria RESOLVE, e o sênior não faz nada pelo
+  // ânimo: marcado como "equipe" ele era recomendado com a justificativa "ânimo
+  // médio da equipe em 30", ou seja, o consultor mandava comprar a si mesmo
+  // para um problema que ele não conserta. "fluxo" cai na queixa de loja
+  // rodando bem, que é quando comprar leitura melhor faz sentido.
+  { id: "consultorSenior", nome: "Consultor sênior", descricao: "Amplia os apontamentos do consultor e refina a estimativa de lucro.", custo: 2400, requer: [], tier: 2, resolve: "fluxo" },
   // Camada 3 — a partir do dia 5, quando o caixa já aguenta.
   { id: "segundoBalcao", nome: "Segundo balcão", descricao: "A fila comporta mais 2 clientes ao mesmo tempo.", custo: 3500, requer: [], tier: 3, resolve: "fila" },
   { id: "carrinhoDuplo", nome: "Carrinho duplo", descricao: "Sobe para 4 itens por vez: a loja inteira cabe numa volta só.", custo: 4200, requer: ["carrinhoAtendimento"], tier: 3, resolve: "movimento" },
