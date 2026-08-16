@@ -18,6 +18,7 @@ export type UpgradeId =
   | "cafeteiraAutomatica"
   | "treinamentoBancada"
   | "manualAtendimento"
+  | "consultorSenior"
   // Linha de capacidade de atendimento: quantos itens o atendente leva por vez.
   | "cestaAtendimento"
   | "carrinhoAtendimento"

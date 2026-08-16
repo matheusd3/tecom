@@ -63,6 +63,8 @@ const CATALOGO_MELHORIAS: Upgrade[] = [
   { id: "bancadaRapida", nome: "Bancada com testes", descricao: "Reparos levam 25% menos tempo.", custo: 3000, requer: [], tier: 2, resolve: "reparo" },
   { id: "treinamentoBancada", nome: "Treinamento da bancada", descricao: "+15 de habilidade para técnicos atuais e futuros.", custo: 2800, requer: [], tier: 2, resolve: "reparo" },
   { id: "manualAtendimento", nome: "Manual de atendimento", descricao: "+15 de habilidade para vendedores e gerente; melhora as aprovações.", custo: 2600, requer: [], tier: 2, resolve: "fila" },
+  // `resolve` é o gargalo que a melhoria RESOLVE, e o sênior não faz nada pelo
+  { id: "consultorSenior", nome: "Consultor sênior", descricao: "Amplia os apontamentos do consultor e refina a estimativa de lucro.", custo: 2400, requer: [], tier: 2, resolve: "equipe" },
   // Camada 3 — a partir do dia 5, quando o caixa já aguenta.
   { id: "segundoBalcao", nome: "Segundo balcão", descricao: "A fila comporta mais 2 clientes ao mesmo tempo.", custo: 3500, requer: [], tier: 3, resolve: "fila" },
   { id: "carrinhoDuplo", nome: "Carrinho duplo", descricao: "Sobe para 4 itens por vez: a loja inteira cabe numa volta só.", custo: 4200, requer: ["carrinhoAtendimento"], tier: 3, resolve: "movimento" },
@@ -181,7 +183,10 @@ export class GameWorld {
   }
 
   public getOpportunities(): Opportunity[] {
-    if (this.temConsultor()) return [...this.opportunities];
+    if (this.temConsultor()) {
+      const limite = this.temUpgrade("consultorSenior") ? 15 : 6;
+      return this.opportunities.slice(0, limite);
+    }
     const grave = this.opportunities.find((item) => item.severity === "high");
     return grave ? [grave] : [];
   }
@@ -1095,8 +1100,11 @@ export class GameWorld {
     const lastShown = this.lastOpportunityAt.get(key) ?? -Infinity;
     if (this.state.time - lastShown < 90) return;
     this.lastOpportunityAt.set(key, this.state.time);
-    this.opportunities.unshift({ id: `opp-${key}-${Math.floor(this.state.time)}`, type, title, description, potentialProfit: Math.round(potentialProfit), severity, recommendation, timestamp: this.state.time, acao });
-    this.opportunities = this.opportunities.slice(0, 10);
+    // Sem o sênior, a leitura é conservadora e curta; a melhoria compra mais
+    // sinais e uma previsão mais próxima do ganho provável.
+    const estimativa = this.temUpgrade("consultorSenior") ? potentialProfit : potentialProfit * 0.85;
+    this.opportunities.unshift({ id: `opp-${key}-${Math.floor(this.state.time)}`, type, title, description, potentialProfit: Math.round(estimativa), severity, recommendation, timestamp: this.state.time, acao });
+    this.opportunities = this.opportunities.slice(0, this.temUpgrade("consultorSenior") ? 15 : 6);
   }
 
   private updateDemand(elapsed: number): void {
