@@ -69,6 +69,8 @@ export interface GameHandle {
   pickUpRepair(customerId: string): boolean;
   pickUpRestock(productType: ProductType): boolean;
   pickUpGallon(): boolean;
+  /** Pacote de café: carga pesada como o galão, mas o auxiliar também repõe. */
+  pickUpCoffee(): boolean;
   /** Tira um item específico da pilha (o primeiro que casar com o filtro). */
   putDownItem(filtro: Partial<ItemCarregado>): boolean;
   /** Esvazia os braços. */
@@ -180,7 +182,7 @@ export async function createGameScene(
   let vendasVistas = 0;
   let reparosVistos = 0;
 
-  const PESADOS: TipoCarga[] = ["caixa", "galao"];
+  const PESADOS: TipoCarga[] = ["caixa", "galao", "cafe"];
   const temPesado = () => carregados.some((item) => PESADOS.includes(item.tipo));
   const capacidade = () => world.capacidadeDeCarga();
   const espacoLivre = () => {
@@ -199,6 +201,8 @@ export async function createGameScene(
             ? "#c79a63"
             : item.tipo === "galao"
             ? "#7ad6ff"
+            : item.tipo === "cafe"
+            ? "#6b4423"
             : undefined,
       }))
     );
@@ -246,6 +250,9 @@ export async function createGameScene(
       equipe.atualizar(dt);
       loja.atualizarPilhas(estado);
       loja.atualizarBebedouro(estado.nivelDoBebedouro);
+      // Nível negativo apaga a estação: enquanto o café não é comprado ele não
+      // existe na loja.
+      loja.atualizarCafe(estado.upgrades.includes("cafeDaEspera") ? estado.nivelDoCafe : -1);
       loja.animar(dt);
     },
 
@@ -287,6 +294,10 @@ export async function createGameScene(
     },
     pickUpGallon() {
       return guardar({ tipo: "galao" });
+    },
+
+    pickUpCoffee() {
+      return guardar({ tipo: "cafe" });
     },
 
     putDownItem(filtro) {

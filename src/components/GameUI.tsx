@@ -131,6 +131,7 @@ const ROTULO_ESTACAO: Record<PlayerStation, string> = {
   almoxarifado: "no almoxarifado",
   assistencia: "na bancada técnica",
   bebedouro: "no bebedouro",
+  cafe: "no ponto de café",
   loja: "andando pela loja",
 };
 
@@ -175,6 +176,7 @@ function destinoDaCarga(nome: string): string {
   if (nome.startsWith("aparelho")) return "leve à bancada";
   if (nome.startsWith("caixa")) return "leve à prateleira";
   if (nome.startsWith("galão")) return "leve ao bebedouro";
+  if (nome.startsWith("pacote")) return "leve ao ponto de café";
   return "leve ao balcão";
 }
 
@@ -191,6 +193,7 @@ const ABA_DA_ESTACAO: Partial<Record<PlayerStation, AbaLateral>> = {
   almoxarifado: "estoque",
   assistencia: "equipe",
   bebedouro: "equipe",
+  cafe: "equipe",
 };
 
 // A função aparece logo abaixo do nome no painel, então o nome gerado não

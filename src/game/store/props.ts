@@ -19,7 +19,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTexture";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 
-import { GOLES_BEBEDOURO, type GameState } from "../types";
+import { DOSES_CAFE, GOLES_BEBEDOURO, type GameState } from "../types";
 import {
   ALMOXARIFADO,
   ALTURA_PAREDE,
@@ -53,6 +53,8 @@ export interface Loja {
   atualizarPilhas(estado: GameState): void;
   /** Acerta a coluna de água e a régua do piso com os goles que restam. */
   atualizarBebedouro(nivel: number): void;
+  /** Idem para o café. `nivel` negativo = melhoria não comprada, some da cena. */
+  atualizarCafe(nivel: number): void;
   /** Estala o terminal do balcão quando uma venda fecha. */
   pulsarCaixa(): void;
   /** Anima o que a cena tem de vivo (só o estalo da caixa, por enquanto). */
@@ -216,12 +218,14 @@ export function construirLoja(scene: Scene): Loja {
   bancadaTecnica(scene, mats, letreiros);
   estoque(scene, mats, letreiros);
   const galao = bebedouro(scene, mats, letreiros);
+  const cafeteira = pontoDeCafe(scene, mats, letreiros);
   decoracao(scene, mats);
   const pilhas = pilhasDeReparo(scene);
 
   return {
     atualizarPilhas: pilhas.atualizar,
     atualizarBebedouro: galao.atualizar,
+    atualizarCafe: cafeteira.atualizar,
     pulsarCaixa: caixa.pulsar,
     animar: caixa.animar,
 
@@ -348,6 +352,102 @@ function bebedouro(
   };
 }
 
+/**
+ * Ponto de café da espera — o irmão do bebedouro, e desenhado igual de
+ * propósito: o jogador já aprendeu a ler a régua deitada no piso, então a
+ * segunda estação consumível usa a mesma linguagem em vez de inventar outra.
+ *
+ * O que muda é a cor (âmbar quente contra o ciano da água) e o fato de a
+ * estação inteira sumir da cena enquanto a melhoria não foi comprada.
+ */
+function pontoDeCafe(
+  scene: Scene,
+  mats: Materiais,
+  letreiros: Map<Estacao, StandardMaterial>
+): { atualizar(nivel: number): void } {
+  const r = MOVEIS.cafe;
+  const c = centro(r);
+  const AMBAR = COR_ESTACAO.cafe;
+  const pecas: Mesh[] = [];
+
+  pecas.push(blocoDoRetangulo(scene, "cafe-plataforma", r, 0.16, 0, mats.metalEscuro));
+  const friso = bloco(
+    scene,
+    "cafe-friso",
+    { l: largura(r), a: 0.1, p: 0.16 },
+    { x: c.x, y: 0.05, z: r.minZ - 0.08 },
+    neon(scene, "matCafeNeon", AMBAR, 1.05)
+  );
+  pecas.push(friso);
+  letreiros.set("cafe", friso.material as StandardMaterial);
+
+  // Balcãozinho ao fundo da plataforma, com a máquina em cima. Topo a 1,24.
+  const xMaquina = c.x + 0.2;
+  const zMaquina = r.maxZ - 0.85;
+  pecas.push(bloco(scene, "cafe-corpo", { l: 1.15, a: 0.56, p: 1.4 }, { x: xMaquina, y: 0.44, z: zMaquina }, mats.madeiraEscura));
+  pecas.push(bloco(scene, "cafe-tampo", { l: 1.3, a: 0.09, p: 1.55 }, { x: xMaquina, y: 0.765, z: zMaquina }, mats.branco));
+  pecas.push(bloco(scene, "cafe-maquina", { l: 0.68, a: 0.42, p: 0.6 }, { x: xMaquina, y: 1.02, z: zMaquina + 0.1 }, mats.preto));
+  const bico = CreateBox("cafe-bico", { width: 0.16, height: 0.12, depth: 0.14 }, scene);
+  bico.position.set(xMaquina, 0.87, zMaquina - 0.42);
+  bico.material = mats.metal;
+  bico.freezeWorldMatrix();
+  pecas.push(bico);
+
+  // Bule de vidro com o café dentro: a coluna cai junto com o nível.
+  const ALTURA_CAFE = 0.3;
+  const BASE_CAFE = 0.82;
+  const bule = CreateCylinder("cafe-bule", { diameter: 0.42, height: 0.36 }, scene);
+  bule.position.set(xMaquina - 0.02, 1.0, zMaquina - 0.5);
+  bule.material = mats.vidro;
+  bule.freezeWorldMatrix();
+  pecas.push(bule);
+  const liquido = CreateCylinder("cafe-liquido", { diameter: 0.34, height: ALTURA_CAFE }, scene);
+  liquido.material = fosco(scene, "matCafeLiquido", "#5b2f16", { brilho: 0.3 });
+  pecas.push(liquido);
+
+  // Régua de nível no piso: dez casas, uma por dose.
+  const matCheio = neon(scene, "matCafeCasaCheia", AMBAR, 1.2);
+  const matVazio = fosco(scene, "matCafeCasaVazia", "#2b211a", { brilho: 0.05 });
+  const vao = profundidade(r) - 0.5;
+  const passo = vao / DOSES_CAFE;
+  const casas = Array.from({ length: DOSES_CAFE }, (_, i) => {
+    const casa = CreateBox(`cafe-casa-${i}`, { width: 0.3, height: 0.04, depth: passo - 0.07 }, scene);
+    casa.position.set(r.minX + 0.26, 0.185, r.minZ + 0.25 + passo * (i + 0.5));
+    casa.material = matVazio;
+    casa.freezeWorldMatrix();
+    return casa;
+  });
+  pecas.push(...casas);
+
+  const decalque = CreatePlane("cafe-decalque", { width: 1.1, height: 0.56 }, scene);
+  decalque.rotation.x = Math.PI / 2;
+  decalque.position.set(r.maxX - 0.62, 0.19, r.minZ + 1.0);
+  decalque.material = materialPlaca(scene, "cafeDecalque", "CAFÉ", AMBAR, "#231508");
+  decalque.freezeWorldMatrix();
+  pecas.push(decalque);
+
+  let ultimo = -2;
+  return {
+    atualizar(nivel) {
+      if (nivel === ultimo) return;
+      ultimo = nivel;
+      // Nível negativo = melhoria não comprada: a estação inteira sai da cena,
+      // senão o salão teria um móvel que não faz nada e confunde.
+      const instalado = nivel >= 0;
+      for (const peca of pecas) peca.setEnabled(instalado);
+      liquido.setEnabled(instalado && nivel > 0);
+      if (!instalado) return;
+      const doses = Math.max(0, Math.min(DOSES_CAFE, Math.round(nivel)));
+      const fracao = doses / DOSES_CAFE;
+      liquido.scaling.y = Math.max(0.001, fracao);
+      liquido.position.set(xMaquina - 0.02, BASE_CAFE + (ALTURA_CAFE * fracao) / 2, zMaquina - 0.5);
+      casas.forEach((casa, i) => {
+        casa.material = i < doses ? matCheio : matVazio;
+      });
+    },
+  };
+}
+
 // ------------------------------------------------------------------ piso
 
 function piso(scene: Scene, mats: Materiais, tapetes: Map<Estacao, Tapete>): void {
@@ -389,6 +489,7 @@ function piso(scene: Scene, mats: Materiais, tapetes: Map<Estacao, Tapete>): voi
     // O tapete é o que dá presença ao bebedouro sem custar altura: ele
     // transborda a pegada do móvel de propósito.
     { id: "bebedouro", retangulos: [{ minX: 8.7, maxX: 11, minZ: -1.5, maxZ: 4.3 }] },
+    { id: "cafe", retangulos: [{ minX: 2.3, maxX: 5.2, minZ: -0.9, maxZ: 4.1 }] },
     {
       id: "almoxarifado",
       retangulos: [

@@ -26,7 +26,7 @@ import { PALETA, cor, fosco, materialIcone, neon } from "./materials";
 // tronco engolia os braços. Contorno só vale para malha única; a leitura das
 // pessoas aqui vem do tamanho (raiz.scaling 1,45), da cor da roupa e da sombra.
 
-export type TipoCarga = "produto" | "aparelho" | "caixa" | "galao";
+export type TipoCarga = "produto" | "aparelho" | "caixa" | "galao" | "cafe";
 export type TipoPedido = "produto" | "reparo" | "feliz" | "bravo";
 
 /** Um item na pilha que o personagem carrega. */

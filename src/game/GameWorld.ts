@@ -1,6 +1,7 @@
 import {
   ActionResult,
   Customer,
+  DiscountRequest,
   Employee,
   EmployeeRole,
   GameState,
@@ -51,7 +52,7 @@ const CAPACIDADE_PRATELEIRA = 10;
  */
 const CATALOGO_MELHORIAS: Upgrade[] = [
   // Camada 1 — fundação barata, disponível desde o primeiro fechamento.
-  { id: "cafeDaEspera", nome: "Café na espera", descricao: "Clientes perdem paciência 25% mais devagar.", custo: 1500, requer: [], tier: 1, resolve: "fila" },
+  { id: "cafeDaEspera", nome: "Café na espera", descricao: "Clientes perdem paciência 25% mais devagar — enquanto houver café no bule.", custo: 1500, requer: [], tier: 1, resolve: "fila" },
   { id: "cestaAtendimento", nome: "Cesta de atendimento", descricao: "Você leva 2 itens de uma vez, entre produtos e aparelhos.", custo: 1600, requer: [], tier: 1, resolve: "movimento" },
   { id: "carrinho", nome: "Carrinho de carga", descricao: "Cada viagem ao almoxarifado repõe até 10 unidades.", custo: 1800, requer: [], tier: 1, resolve: "estoque" },
   { id: "bebedouroAutomatico", nome: "Bebedouro automático", descricao: "Troca o galão vazio sozinho.", custo: 2000, requer: [], tier: 1, resolve: "equipe" },
@@ -296,6 +297,44 @@ export class GameWorld {
     if (this.temUpgrade("bebedouroAutomatico")) return { ok: false, message: "O bebedouro automático já cuida do galão." };
     this.state.nivelDoBebedouro = GOLES_BEBEDOURO;
     return { ok: true, message: "Galão trocado: o bebedouro está cheio." };
+  }
+
+  public nomeDoPedido(kind: "discount" | "premium"): string {
+    return kind === "premium" ? "ágio" : "desconto";
+  }
+
+  /**
+   * Quem decide o preço fora da vitrine.
+   *
+   * Mora no núcleo e é pública porque os DOIS caminhos precisam da mesma
+   * resposta: o auxiliar que pede aval e o jogador que está no balcão com o
+   * produto na mão. Enquanto essa regra viveu só dentro do laço do auxiliar, o
+   * gerente aprovava para quem tinha equipe e deixava o jogador sozinho —
+   * justamente quem mais precisava dele — parado no cartão.
+   */
+  public avaliarAprovacao(pedido: DiscountRequest): {
+    decisao: "aprovar" | "recusar" | "perguntar";
+    porQuem: string;
+    motivo: string;
+  } {
+    const gerente = Array.from(this.state.employees.values()).find(
+      (employee) => employee.role === "manager"
+    );
+    if (!gerente) return { decisao: "perguntar", porQuem: "", motivo: "" };
+    // Ágio é dinheiro a mais: gerente nenhum recusa. Desconto tem teto, e o
+    // teto sobe com a habilidade dele (é o que o Manual de atendimento compra).
+    if (pedido.kind === "premium") {
+      return { decisao: "aprovar", porQuem: gerente.name, motivo: "cliente paga acima da vitrine" };
+    }
+    const desconto = (pedido.showcasePrice - pedido.customerPrice) / pedido.showcasePrice;
+    const limite = 0.1 + gerente.skill / 1000;
+    return desconto <= limite
+      ? { decisao: "aprovar", porQuem: gerente.name, motivo: `${Math.round(desconto * 100)}% cabe no limite` }
+      : {
+          decisao: "recusar",
+          porQuem: gerente.name,
+          motivo: `${Math.round(desconto * 100)}% passa do limite de ${Math.round(limite * 100)}%`,
+        };
   }
 
   /** Café é o oposto do galão: qualquer auxiliar pode cuidar dele. */
@@ -823,18 +862,20 @@ export class GameWorld {
           kind,
         };
         alvosTomados.add(`cliente:${precisaAval.id}`);
-        if (this.temGerente()) {
-          const gerente = Array.from(this.state.employees.values()).find((employee) => employee.role === "manager")!;
-          const desconto = (pedido.showcasePrice - pedido.customerPrice) / pedido.showcasePrice;
-          const limite = 0.10 + gerente.skill / 1000;
-          if (kind === "premium" || desconto <= limite) {
-            const resultado = this.sellToCustomer(pedido.customerId, pedido.customerPrice, helper.id);
-            if (resultado.ok) {
-              ocupar(`${gerente.name} aprovou ${kind === "premium" ? "ágio" : "desconto"} em ${product.name}.`, "venda");
-              return true;
-            }
+        const veredito = this.avaliarAprovacao(pedido);
+        if (veredito.decisao === "aprovar") {
+          const resultado = this.sellToCustomer(pedido.customerId, pedido.customerPrice, helper.id);
+          if (resultado.ok) {
+            ocupar(`${veredito.porQuem} aprovou ${this.nomeDoPedido(kind)} em ${product.name}.`, "venda");
+            return true;
           }
-          this.state.supportTask = `${gerente.name} recusou desconto de ${Math.round(desconto * 100)}% em ${product.name}.`;
+          // Venda barrada por outro motivo (vendedor ocupado) não é recusa do
+          // gerente: dizer que ele recusou seria mentir para o jogador.
+          this.state.supportTask = resultado.message;
+          return true;
+        }
+        if (veredito.decisao === "recusar") {
+          this.state.supportTask = `${veredito.porQuem} recusou ${this.nomeDoPedido(kind)} em ${product.name}: ${veredito.motivo}`;
           return true;
         }
         this.state.pendingDiscount = pedido;
@@ -964,7 +1005,7 @@ export class GameWorld {
     this.shiftReport = {
       day: this.state.day, goal: this.state.dailyGoal, revenue, profit, sales, repairs, customersLost, folha,
       reputationChange: this.state.reputation - this.shiftStartReputation,
-      goalReached, topOpportunity: this.opportunities[0], highlights: [...this.shiftHighlights],
+      goalReached, topOpportunity: this.getOpportunities()[0], highlights: [...this.shiftHighlights],
     };
     this.state.phase = "summary";
     this.state.isPaused = true;

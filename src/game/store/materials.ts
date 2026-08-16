@@ -37,7 +37,7 @@ export const PALETA = {
 } as const;
 
 export const COR_ESTACAO: Record<
-  "balcao" | "prateleira" | "assistencia" | "almoxarifado" | "bebedouro",
+  "balcao" | "prateleira" | "assistencia" | "almoxarifado" | "bebedouro" | "cafe",
   string
 > = {
   balcao: PALETA.ciano,
@@ -45,6 +45,9 @@ export const COR_ESTACAO: Record<
   assistencia: PALETA.magenta,
   almoxarifado: PALETA.ambar,
   bebedouro: PALETA.ciano,
+  // Âmbar quente para o café não ser confundido com o bebedouro ciano: as duas
+  // estações ficam lado a lado no cantinho de espera.
+  cafe: "#d98a3a",
 };
 
 /** Cores das caixas de produto nas prateleiras. */

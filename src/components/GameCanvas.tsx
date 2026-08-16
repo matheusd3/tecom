@@ -12,9 +12,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { createGameScene, type GameHandle, type PlayerStation } from "@/game/scene";
 import type { GameWorld } from "@/game/GameWorld";
-import { GOLES_BEBEDOURO } from "@/game/types";
+import { DOSES_CAFE, GOLES_BEBEDOURO } from "@/game/types";
 import type {
   ActionResult,
+  DiscountRequest,
   GameState,
   OfertaDeMelhoria,
   Opportunity,
@@ -142,6 +143,7 @@ export default function GameCanvas() {
         if (item.tipo === "produto") return estado.products.get(item.produto!)?.name ?? "produto";
         if (item.tipo === "caixa") return `caixa de ${estado.products.get(item.produto!)?.name ?? "mercadoria"}`;
         if (item.tipo === "galao") return "galão de água";
+        if (item.tipo === "cafe") return "pacote de café";
         return `aparelho de ${estado.customers.get(item.customerId ?? "")?.name ?? "cliente"}`;
       }),
       capacidade: world.capacidadeDeCarga(),
@@ -178,6 +180,7 @@ export default function GameCanvas() {
     const aparelhoNaMao = carregados.find((item) => item.tipo === "aparelho")?.customerId;
     const carriedRestock = handle.getCarriedRestock();
     const carriedGallon = handle.getCarriedGallon();
+    const carriedCoffee = carregados.some((item) => item.tipo === "cafe");
     const nomeDe = (tipo?: ProductType) =>
       (tipo && state.products.get(tipo)?.name) || "o produto";
 
@@ -198,6 +201,12 @@ export default function GameCanvas() {
     if (station === "bebedouro") {
       if (!carriedGallon) result = { ok: false, message: "Pegue um galão cheio no almoxarifado." };
       else { result = world.abastecerBebedouro(); if (result.ok) handle.putDownItem({ tipo: "galao" }); }
+    } else if (station === "cafe") {
+      // Espelho do bebedouro. A diferença é de regra, não de gesto: aqui o
+      // auxiliar também repõe, e é isso que faz o café ser argumento para
+      // contratar em vez de mais uma ida ao almoxarifado.
+      if (!carriedCoffee) result = { ok: false, message: "Pegue um pacote de café no almoxarifado." };
+      else { result = world.reporCafe(); if (result.ok) handle.putDownItem({ tipo: "cafe" }); }
     } else if (station === "assistencia") {
       if (aparelhoNaMao) {
         result = world.acceptRepair(aparelhoNaMao);
@@ -225,19 +234,32 @@ export default function GameCanvas() {
         // é do Carrinho de carga.
         result = { ok: false, message: "Caixa e galão pedem os dois braços. Entregue o que está carregando primeiro." };
       } else {
-        // Aqui saem as duas cargas da sala dos fundos: a caixa de mercadoria e
-        // o galão de água. Bebedouro seco fura a fila da reposição — sem água
-        // a equipe inteira perde ânimo, e repor prateleira pode esperar.
+        // Aqui saem as três cargas da sala dos fundos: caixa de mercadoria,
+        // galão de água e pacote de café. O que está VAZIO fura a fila da
+        // reposição — sem água a equipe perde ânimo e sem café a fila perde a
+        // paciência; repor prateleira pode esperar.
         const paraRepor = world.produtoParaRepor();
         const galaoUtil = state.nivelDoBebedouro < GOLES_BEBEDOURO;
-        if (state.nivelDoBebedouro === 0 || (!paraRepor && galaoUtil)) {
+        const cafeInstalado =
+          world.temUpgrade("cafeDaEspera") && !world.temUpgrade("cafeteiraAutomatica");
+        const cafeUtil = cafeInstalado && state.nivelDoCafe < DOSES_CAFE;
+        if (state.nivelDoBebedouro === 0) {
           handle.pickUpGallon();
           result = { ok: true, message: "Galão cheio nas mãos. Leve-o ao bebedouro." };
-        } else if (!paraRepor) {
-          result = { ok: false, message: "Almoxarifado vazio. Compre mercadoria no painel de estoque." };
-        } else {
+        } else if (cafeInstalado && state.nivelDoCafe === 0) {
+          handle.pickUpCoffee();
+          result = { ok: true, message: "Pacote de café nas mãos. Leve-o ao ponto de café." };
+        } else if (paraRepor) {
           handle.pickUpRestock(paraRepor);
           result = { ok: true, message: `Caixa de ${nomeDe(paraRepor)} nas mãos. Leve até a prateleira.` };
+        } else if (galaoUtil) {
+          handle.pickUpGallon();
+          result = { ok: true, message: "Galão cheio nas mãos. Leve-o ao bebedouro." };
+        } else if (cafeUtil) {
+          handle.pickUpCoffee();
+          result = { ok: true, message: "Pacote de café nas mãos. Leve-o ao ponto de café." };
+        } else {
+          result = { ok: false, message: "Almoxarifado vazio. Compre mercadoria no painel de estoque." };
         }
       }
     } else if (station === "prateleira") {
@@ -306,19 +328,57 @@ export default function GameCanvas() {
       } else if (comprador?.needsProduct) {
         const product = state.products.get(comprador.needsProduct);
         const preco = product?.sellingPrice ?? 0;
-        if (product && comprador.budget < preco) {
-          // Vender abaixo da vitrine é decisão do dono da loja, não do atendente.
-          setPedidoDesconto({
+        // Preço fora da vitrine nos DOIS sentidos, e com a mesma faixa de 8%
+        // que o auxiliar usa: abaixo é desconto, bem acima é ágio. Antes só o
+        // desconto existia aqui, e quem atendia sozinho vendia por 62 a quem
+        // pagaria 100 sem nem saber que tinha deixado dinheiro na mesa.
+        const foraDaVitrine =
+          !!product && (comprador.budget < preco || comprador.budget > preco * 1.08);
+        if (product && foraDaVitrine) {
+          const pedido: DiscountRequest = {
             customerId: comprador.id,
             customerName: comprador.name,
-            produto: product.name,
-            precoVitrine: preco,
-            precoCliente: comprador.budget,
-          });
-          result = {
-            ok: false,
-            message: `${comprador.name} não paga o preço de vitrine. Aprove ou recuse o desconto.`,
+            productName: product.name,
+            showcasePrice: preco,
+            customerPrice: comprador.budget,
+            askedBy: "você",
+            kind: comprador.budget < preco ? "discount" : "premium",
           };
+          // Quem tem gerente não é interrompido: ele decide na hora, do mesmo
+          // jeito que decide o pedido do auxiliar.
+          const veredito = world.avaliarAprovacao(pedido);
+          if (veredito.decisao === "aprovar") {
+            const vendido = comprador.needsProduct;
+            result = world.sellToCustomer(comprador.id, comprador.budget);
+            if (result.ok) {
+              handle.putDownItem({ tipo: "produto", produto: vendido });
+              result = {
+                ok: true,
+                message: `${veredito.porQuem} aprovou o ${world.nomeDoPedido(pedido.kind)}: ${result.message}`,
+              };
+            }
+          } else if (veredito.decisao === "recusar") {
+            result = {
+              ok: false,
+              message: `${veredito.porQuem} recusou o ${world.nomeDoPedido(pedido.kind)}: ${veredito.motivo}.`,
+            };
+          } else {
+            setPedidoDesconto({
+              customerId: comprador.id,
+              customerName: comprador.name,
+              produto: product.name,
+              precoVitrine: preco,
+              precoCliente: comprador.budget,
+              tipo: pedido.kind,
+            });
+            result = {
+              ok: false,
+              message:
+                pedido.kind === "premium"
+                  ? `${comprador.name} aceita pagar acima da vitrine. Aprove ou mantenha o preço.`
+                  : `${comprador.name} não paga o preço de vitrine. Aprove ou recuse o desconto.`,
+            };
+          }
         } else {
           const vendido = comprador.needsProduct;
           result = world.sellToCustomer(comprador.id, preco);
