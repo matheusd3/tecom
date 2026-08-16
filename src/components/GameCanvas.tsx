@@ -16,6 +16,7 @@ import { GOLES_BEBEDOURO } from "@/game/types";
 import type {
   ActionResult,
   GameState,
+  OfertaDeMelhoria,
   Opportunity,
   ProductType,
   EmployeeRole,
@@ -28,10 +29,13 @@ import { Soundtrack } from "@/audio/Soundtrack";
 interface Instantaneo {
   gameState: GameState | null;
   opportunities: Opportunity[];
-  upgradesOferecidos: Upgrade[];
+  upgradesOferecidos: OfertaDeMelhoria[];
   shiftReport: ShiftReport | null;
   playerStation: PlayerStation;
-  carriedProductName?: string;
+  /** Nomes do que está nos braços, do primeiro pego ao último. */
+  carregando: string[];
+  /** Quantos itens cabem hoje — muda com a linha do carrinho de atendimento. */
+  capacidade: number;
   mapAction: ActionResult | null;
 }
 
@@ -108,6 +112,8 @@ export default function GameCanvas() {
     upgradesOferecidos: [],
     shiftReport: null,
     playerStation: "loja",
+    carregando: [],
+    capacidade: 1,
     mapAction: null,
   });
   const [capacidades, setCapacidades] = useState<Capacidades>({
@@ -131,15 +137,14 @@ export default function GameCanvas() {
       upgradesOferecidos: world.getUpgradesOferecidos(),
       shiftReport: lerRelatorio(world),
       playerStation: handleRef.current?.getPlayerStation() ?? "loja",
-      carriedProductName: (() => {
-        const type = handleRef.current?.getCarriedProduct();
-        if (type) return world.getState().products.get(type)?.name;
-        const restock = handleRef.current?.getCarriedRestock();
-        if (restock) return `caixa de ${world.getState().products.get(restock)?.name ?? "mercadoria"}`;
-        if (handleRef.current?.getCarriedGallon()) return "galão de água";
-        const repairCustomerId = handleRef.current?.getCarriedRepairCustomerId();
-        return repairCustomerId ? `aparelho de ${world.getState().customers.get(repairCustomerId)?.name ?? "cliente"}` : undefined;
-      })(),
+      carregando: (handleRef.current?.getCarried() ?? []).map((item) => {
+        const estado = world.getState();
+        if (item.tipo === "produto") return estado.products.get(item.produto!)?.name ?? "produto";
+        if (item.tipo === "caixa") return `caixa de ${estado.products.get(item.produto!)?.name ?? "mercadoria"}`;
+        if (item.tipo === "galao") return "galão de água";
+        return `aparelho de ${estado.customers.get(item.customerId ?? "")?.name ?? "cliente"}`;
+      }),
+      capacidade: world.capacidadeDeCarga(),
       mapAction: mapActionRef.current,
     });
     // Se o cliente desistiu enquanto o desconto esperava resposta, o pedido
@@ -162,10 +167,20 @@ export default function GameCanvas() {
       sincronizar();
       return;
     }
-    const carriedRepairCustomerId = handle.getCarriedRepairCustomerId();
-    const carriedProduct = handle.getCarriedProduct();
+    // A partir da linha do carrinho o atendente leva mais de um item, então
+    // "o que está na mão" virou uma pilha e cada estação escolhe QUAL item
+    // usar — não dá mais para assumir que só existe um.
+    const carregados = handle.getCarried();
+    const espaco = handle.espacoLivre();
+    const produtosNaMao = carregados
+      .filter((item) => item.tipo === "produto" && item.produto)
+      .map((item) => item.produto as ProductType);
+    const aparelhoNaMao = carregados.find((item) => item.tipo === "aparelho")?.customerId;
     const carriedRestock = handle.getCarriedRestock();
     const carriedGallon = handle.getCarriedGallon();
+    const nomeDe = (tipo?: ProductType) =>
+      (tipo && state.products.get(tipo)?.name) || "o produto";
+
     // A fila é a ordem de chegada; o cliente priorizado no painel vem antes.
     const aguardando = Array.from(state.customers.values()).filter(
       (item) => item.status === "waiting"
@@ -173,16 +188,6 @@ export default function GameCanvas() {
     const selectedCustomer = state.selectedCustomerId
       ? state.customers.get(state.selectedCustomerId)
       : undefined;
-    // Quem a tecla E atende: primeiro o que já está na mão, depois quem quer
-    // justamente o produto carregado, e só então a frente da fila. Sem isso o E
-    // tentava vender a caixa que está na mão para quem pediu outra coisa.
-    const customer = carriedRepairCustomerId
-      ? state.customers.get(carriedRepairCustomerId)
-      : carriedProduct
-      ? aguardando.find((item) => item.needsProduct === carriedProduct) ?? aguardando[0]
-      : selectedCustomer?.status === "waiting"
-      ? selectedCustomer
-      : aguardando[0];
     const readyRepair = state.repairs.find((repair) => repair.status === "ready");
     let result: ActionResult;
 
@@ -192,11 +197,13 @@ export default function GameCanvas() {
     // aparelho para entregar ao técnico e conserto para ajudar a terminar.
     if (station === "bebedouro") {
       if (!carriedGallon) result = { ok: false, message: "Pegue um galão cheio no almoxarifado." };
-      else { result = world.abastecerBebedouro(); if (result.ok) handle.putDownProduct(); }
+      else { result = world.abastecerBebedouro(); if (result.ok) handle.putDownItem({ tipo: "galao" }); }
     } else if (station === "assistencia") {
-      if (carriedRepairCustomerId) {
-        result = world.acceptRepair(carriedRepairCustomerId);
-        if (result.ok) handle.putDownProduct();
+      if (aparelhoNaMao) {
+        result = world.acceptRepair(aparelhoNaMao);
+        if (result.ok) handle.putDownItem({ tipo: "aparelho", customerId: aparelhoNaMao });
+      } else if (readyRepair && espaco <= 0) {
+        result = { ok: false, message: "Braços cheios: entregue o que está carregando antes de retirar o aparelho pronto." };
       } else if (readyRepair) {
         result = world.collectCompletedRepair(readyRepair.customerId);
         if (result.ok) handle.pickUpRepair(readyRepair.customerId);
@@ -205,15 +212,18 @@ export default function GameCanvas() {
       }
     } else if (station === "almoxarifado") {
       // Sala dos fundos: aqui só se pega caixa para abastecer a prateleira.
-      if (carriedRepairCustomerId) {
+      if (aparelhoNaMao) {
         result = { ok: false, message: "Aparelho de cliente não fica no almoxarifado: leve-o à bancada." };
       } else if (carriedGallon) {
-        handle.putDownProduct(); result = { ok: true, message: "Galão devolvido à estante." };
+        handle.putDownItem({ tipo: "galao" }); result = { ok: true, message: "Galão devolvido à estante." };
       } else if (carriedRestock) {
-        handle.putDownProduct();
+        handle.putDownItem({ tipo: "caixa" });
         result = { ok: true, message: "Caixa devolvida à estante." };
-      } else if (carriedProduct) {
-        result = { ok: false, message: "Você já está com um produto na mão. Leve-o ao balcão." };
+      } else if (carregados.length) {
+        // Caixa e galão são carga pesada: ocupam os dois braços, senão a linha
+        // do carrinho viraria também um upgrade de reposição — e esse papel já
+        // é do Carrinho de carga.
+        result = { ok: false, message: "Caixa e galão pedem os dois braços. Entregue o que está carregando primeiro." };
       } else {
         // Aqui saem as duas cargas da sala dos fundos: a caixa de mercadoria e
         // o galão de água. Bebedouro seco fura a fila da reposição — sem água
@@ -227,78 +237,109 @@ export default function GameCanvas() {
           result = { ok: false, message: "Almoxarifado vazio. Compre mercadoria no painel de estoque." };
         } else {
           handle.pickUpRestock(paraRepor);
-          const nome = state.products.get(paraRepor)?.name ?? "mercadoria";
-          result = { ok: true, message: `Caixa de ${nome} nas mãos. Leve até a prateleira.` };
+          result = { ok: true, message: `Caixa de ${nomeDe(paraRepor)} nas mãos. Leve até a prateleira.` };
         }
       }
-    } else if (station === "prateleira" && (carriedProduct || carriedRepairCustomerId || carriedRestock || carriedGallon)) {
-      // Devolver é o único jeito de destravar as mãos quando a venda não sai
-      // (cliente dispensado, desconto recusado, item errado). Vem antes da
-      // checagem de fila justamente porque costuma não haver mais ninguém.
-      if (carriedRepairCustomerId) {
-        result = {
-          ok: false,
-          message: "Isso é o aparelho de um cliente: leve-o à bancada técnica.",
-        };
+    } else if (station === "prateleira") {
+      if (carriedRestock) {
+        result = world.restockShelf(carriedRestock);
+        if (result.ok) handle.putDownItem({ tipo: "caixa" });
       } else if (carriedGallon) {
         result = { ok: false, message: "Galão de água não vai na prateleira: leve-o ao bebedouro." };
-      } else if (carriedRestock) {
-        result = world.restockShelf(carriedRestock);
-        if (result.ok) handle.putDownProduct();
       } else {
-        const nome = carriedProduct ? state.products.get(carriedProduct)?.name : undefined;
-        handle.putDownProduct();
-        world.clearSelectedCustomer();
-        result = { ok: true, message: `${nome ?? "Produto"} devolvido à prateleira.` };
-      }
-    } else if (!customer) {
-      result = { ok: false, message: "Não há ninguém esperando para atender." };
-    } else if (station === "prateleira") {
-      if (!customer.needsProduct) {
-        result = { ok: false, message: "Este cliente precisa ir para a bancada técnica, não para a prateleira." };
-      } else if ((state.products.get(customer.needsProduct)?.stock ?? 0) <= 0) {
-        result = { ok: false, message: "Não há estoque desse produto na prateleira." };
-      } else {
-        world.selectCustomer(customer.id);
-        handle.pickUpProduct(customer.needsProduct);
-        result = { ok: true, message: `Você pegou ${state.products.get(customer.needsProduct)?.name ?? "o produto"}. Vá ao balcão.` };
+        // O próximo cliente cujo produto ainda NÃO está na pilha. Descontar o
+        // que já foi pego é o que permite montar duas vendas na mesma volta
+        // sem pegar duas vezes a mesma coisa.
+        const jaPegos = [...produtosNaMao];
+        const alvo = aguardando.find((cliente) => {
+          if (!cliente.needsProduct) return false;
+          const i = jaPegos.indexOf(cliente.needsProduct);
+          if (i >= 0) { jaPegos.splice(i, 1); return false; }
+          return (state.products.get(cliente.needsProduct)?.stock ?? 0) > 0;
+        });
+
+        if (alvo?.needsProduct && espaco > 0) {
+          world.selectCustomer(alvo.id);
+          handle.pickUpProduct(alvo.needsProduct);
+          const sobra = espaco - 1;
+          result = {
+            ok: true,
+            message: `Você pegou ${nomeDe(alvo.needsProduct)} para ${alvo.name}. ${
+              sobra > 0 ? `Ainda cabem ${sobra}.` : "Braços cheios: vá ao balcão."
+            }`,
+          };
+        } else if (produtosNaMao.length) {
+          // Devolver é o jeito de destravar os braços quando a venda não sai
+          // (cliente dispensado, desconto recusado, item errado). Vem depois de
+          // pegar, porque com capacidade sobrando buscar é o gesto natural.
+          const devolvido = produtosNaMao[produtosNaMao.length - 1];
+          handle.putDownItem({ tipo: "produto", produto: devolvido });
+          if (handle.getCarried().length === 0) world.clearSelectedCustomer();
+          result = { ok: true, message: `${nomeDe(devolvido)} devolvido à prateleira.` };
+        } else if (aparelhoNaMao) {
+          result = { ok: false, message: "Isso é o aparelho de um cliente: leve-o à bancada técnica." };
+        } else if (!aguardando.length) {
+          result = { ok: false, message: "Não há ninguém esperando para atender." };
+        } else if (espaco <= 0) {
+          result = { ok: false, message: "Braços cheios: leve ao balcão o que já pegou." };
+        } else {
+          result = { ok: false, message: "Ninguém na fila espera produto que esteja na prateleira." };
+        }
       }
     } else if (station === "balcao") {
-      if (carriedRepairCustomerId) {
-        result = world.returnRepairToCustomer(carriedRepairCustomerId);
-        if (result.ok) handle.putDownProduct();
-      } else if (customer.needsService && customer.status === "waiting") {
-        result = world.receiveRepair(customer.id);
-        if (result.ok) handle.pickUpRepair(customer.id);
-      } else if (!customer.needsProduct) {
-        result = { ok: false, message: "Receba o aparelho deste cliente no balcão antes de levá-lo à assistência." };
-      } else if (carriedProduct !== customer.needsProduct) {
-        // De mãos vazias, o E no balcão prioriza esse cliente e diz o que buscar.
-        world.selectCustomer(customer.id);
-        const nome = state.products.get(customer.needsProduct)?.name ?? "o produto";
-        result = carriedProduct
-          ? { ok: false, message: `Você está com outro item na mão. ${customer.name} quer ${nome}.` }
-          : { ok: false, message: `${customer.name} quer ${nome}: pegue nas prateleiras e volte.` };
-      } else {
-        const product = state.products.get(customer.needsProduct);
+      // Reparo pronto na mão volta para o dono antes de qualquer outra coisa.
+      const paraDevolver = carregados.find(
+        (item) =>
+          item.tipo === "aparelho" &&
+          state.repairs.some((repair) => repair.customerId === item.customerId && repair.status === "returning")
+      );
+      // Entre os que esperam, o primeiro cujo produto está na pilha.
+      const comprador = aguardando.find(
+        (cliente) => cliente.needsProduct && produtosNaMao.includes(cliente.needsProduct)
+      );
+      const paraReceber = aguardando.find((cliente) => cliente.needsService);
+      const orientar = selectedCustomer?.status === "waiting" ? selectedCustomer : aguardando[0];
+
+      if (paraDevolver?.customerId) {
+        result = world.returnRepairToCustomer(paraDevolver.customerId);
+        if (result.ok) handle.putDownItem({ tipo: "aparelho", customerId: paraDevolver.customerId });
+      } else if (comprador?.needsProduct) {
+        const product = state.products.get(comprador.needsProduct);
         const preco = product?.sellingPrice ?? 0;
-        if (product && customer.budget < preco) {
+        if (product && comprador.budget < preco) {
           // Vender abaixo da vitrine é decisão do dono da loja, não do atendente.
           setPedidoDesconto({
-            customerId: customer.id,
-            customerName: customer.name,
+            customerId: comprador.id,
+            customerName: comprador.name,
             produto: product.name,
             precoVitrine: preco,
-            precoCliente: customer.budget,
+            precoCliente: comprador.budget,
           });
           result = {
             ok: false,
-            message: `${customer.name} não paga o preço de vitrine. Aprove ou recuse o desconto.`,
+            message: `${comprador.name} não paga o preço de vitrine. Aprove ou recuse o desconto.`,
           };
         } else {
-          result = world.sellToCustomer(customer.id, preco);
-          if (result.ok) handle.putDownProduct();
+          const vendido = comprador.needsProduct;
+          result = world.sellToCustomer(comprador.id, preco);
+          if (result.ok) handle.putDownItem({ tipo: "produto", produto: vendido });
         }
+      } else if (paraReceber && espaco > 0) {
+        result = world.receiveRepair(paraReceber.id);
+        if (result.ok) handle.pickUpRepair(paraReceber.id);
+      } else if (paraReceber) {
+        result = { ok: false, message: "Braços cheios: entregue o que está carregando para receber o aparelho." };
+      } else if (!orientar) {
+        result = { ok: false, message: "Não há ninguém esperando para atender." };
+      } else if (orientar.needsProduct) {
+        // De braços vazios, o E no balcão prioriza esse cliente e diz o que buscar.
+        world.selectCustomer(orientar.id);
+        result = {
+          ok: false,
+          message: `${orientar.name} quer ${nomeDe(orientar.needsProduct)}: pegue nas prateleiras e volte.`,
+        };
+      } else {
+        result = { ok: false, message: "Receba o aparelho deste cliente no balcão antes de levá-lo à assistência." };
       }
     } else {
       result = { ok: false, message: "Aproxime-se do balcão, das prateleiras ou da bancada para usar E." };
@@ -444,25 +485,33 @@ export default function GameCanvas() {
       if (!customer?.needsProduct) {
         return { ok: false, message: "Este cliente precisa da assistência técnica." };
       }
+      const naPilha = handle.getCarried();
+      const jaTem = naPilha.some(
+        (item) => item.tipo === "produto" && item.produto === customer.needsProduct
+      );
       if (handle.getPlayerStation() === "prateleira") {
-        const naMao = handle.getCarriedProduct();
-        if (naMao === customer.needsProduct) {
-          return { ok: false, message: "Você já pegou o produto. Agora leve-o até o balcão." };
-        }
-        if (handle.getCarriedRepairCustomerId()) {
-          return { ok: false, message: "Você está com o aparelho de um cliente: leve-o à bancada técnica." };
+        if (jaTem) {
+          return { ok: false, message: "Você já pegou o produto dele. Agora leve-o até o balcão." };
         }
         if ((world.getState().products.get(customer.needsProduct)?.stock ?? 0) <= 0) {
           return { ok: false, message: "Não há estoque desse produto na prateleira." };
         }
-        // Com o item errado na mão, um clique só troca: devolve e pega o certo.
-        if (naMao) handle.putDownProduct();
+        // Sem espaço, um clique troca: devolve o último produto e pega o certo.
+        // Com a cesta ou o carrinho há espaço, e aí ele só soma na pilha.
+        const trocou = handle.espacoLivre() <= 0;
+        if (trocou) {
+          const ultimo = [...naPilha].reverse().find((item) => item.tipo === "produto");
+          if (!ultimo) {
+            return { ok: false, message: "Braços cheios com carga que não é venda: entregue-a primeiro." };
+          }
+          handle.putDownItem({ tipo: "produto", produto: ultimo.produto });
+        }
         world.selectCustomer(id);
         handle.pickUpProduct(customer.needsProduct);
         const nome = world.getState().products.get(customer.needsProduct)?.name ?? "o produto";
         const result = {
           ok: true,
-          message: naMao
+          message: trocou
             ? `Você trocou pelo ${nome}. Agora volte ao balcão para vender.`
             : `Você pegou ${nome}. Agora volte ao balcão para vender.`,
         };
@@ -473,11 +522,11 @@ export default function GameCanvas() {
       if (handle.getPlayerStation() !== "balcao") {
         return { ok: false, message: "Vá às prateleiras para pegar o produto ou ao balcão para vender." };
       }
-      if (handle.getCarriedProduct() !== customer.needsProduct) {
+      if (!jaTem) {
         return { ok: false, message: "Vá às prateleiras e clique em Vender para pegar o produto pedido." };
       }
       const resultado = world.sellToCustomer(id, preco);
-      if (resultado.ok) handle.putDownProduct();
+      if (resultado.ok) handle.putDownItem({ tipo: "produto", produto: customer.needsProduct });
       sincronizar();
       return resultado;
     },
@@ -537,6 +586,9 @@ export default function GameCanvas() {
       if (!world || !handle) return FALHA_SEM_NUCLEO;
       if (turnoPausado(world)) return TURNO_PAUSADO();
       if (handle.getPlayerStation() === "balcao") {
+        if (handle.espacoLivre() <= 0) {
+          return { ok: false, message: "Braços cheios: entregue o que está carregando para receber o aparelho." };
+        }
         const resultado = world.receiveRepair(id);
         if (resultado.ok) handle.pickUpRepair(id);
         sincronizar();
@@ -545,11 +597,11 @@ export default function GameCanvas() {
       if (handle.getPlayerStation() !== "assistencia") {
         return { ok: false, message: "No balcão, receba o aparelho. Na bancada, entregue-o ao técnico." };
       }
-      if (handle.getCarriedRepairCustomerId() !== id) {
+      if (!handle.getCarried().some((item) => item.tipo === "aparelho" && item.customerId === id)) {
         return { ok: false, message: "Traga o aparelho recebido no balcão até a bancada." };
       }
       const resultado = world.acceptRepair(id);
-      if (resultado.ok) handle.putDownProduct();
+      if (resultado.ok) handle.putDownItem({ tipo: "aparelho", customerId: id });
       sincronizar();
       return resultado;
     },
@@ -661,7 +713,8 @@ export default function GameCanvas() {
           upgradesOferecidos={instantaneo.upgradesOferecidos}
           shiftReport={instantaneo.shiftReport}
           playerStation={instantaneo.playerStation}
-          carriedProductName={instantaneo.carriedProductName}
+          carregando={instantaneo.carregando}
+          capacidade={instantaneo.capacidade}
           mapAction={instantaneo.mapAction}
           pedidoDesconto={pedidoVisivel}
           onAprovarDesconto={aprovarDesconto}

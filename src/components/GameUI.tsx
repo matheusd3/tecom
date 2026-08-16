@@ -13,6 +13,8 @@ import type {
   EmployeeRole,
   GamePhase,
   GameState,
+  MotivoDaOferta,
+  OfertaDeMelhoria,
   Opportunity,
   Product,
   ProductType,
@@ -44,13 +46,15 @@ export interface PedidoDesconto {
 interface GameUIProps {
   gameState: GameState | null;
   opportunities: Opportunity[];
-  upgradesOferecidos: Upgrade[];
+  upgradesOferecidos: OfertaDeMelhoria[];
   shiftReport: ShiftReport | null;
   capacidades: Capacidades;
   /** Onde o atendente está parado na loja 3D. */
   playerStation: PlayerStation;
-  /** O que ele está carregando na mão, se estiver carregando algo. */
-  carriedProductName?: string;
+  /** O que ele está carregando nos braços, do primeiro pego ao último. */
+  carregando: string[];
+  /** Quantos itens cabem — muda com a linha do carrinho de atendimento. */
+  capacidade: number;
   /** Resposta da última interação feita pela tecla E dentro da loja. */
   mapAction: ActionResult | null;
   /** Desconto esperando aprovação do jogador, se houver. */
@@ -124,6 +128,21 @@ const ROTULO_ESTACAO: Record<PlayerStation, string> = {
   assistencia: "na bancada técnica",
   bebedouro: "no bebedouro",
   loja: "andando pela loja",
+};
+
+/** Para onde levar o item que está por cima da pilha. */
+function destinoDaCarga(nome: string): string {
+  if (nome.startsWith("aparelho")) return "leve à bancada";
+  if (nome.startsWith("caixa")) return "leve à prateleira";
+  if (nome.startsWith("galão")) return "leve ao bebedouro";
+  return "leve ao balcão";
+}
+
+/** Por que cada cartão do fechamento está na oferta de hoje. */
+const SELO_DA_OFERTA: Record<MotivoDaOferta, string> = {
+  consultor: "o consultor recomenda",
+  sorteio: "sorteada",
+  acessivel: "cabe no caixa",
 };
 
 /** Chegar numa estação abre o painel que serve para agir ali. */
@@ -536,15 +555,19 @@ export function GameUI(props: GameUIProps) {
         <span className={`estacao-chip estacao-chip--${estacao}`}>
           {ROTULO_ESTACAO[estacao]}
         </span>
-        {/* Carregando algo, o próximo passo é o que mais importa na tela. */}
-        {props.carriedProductName && (
+        {/* Carregando algo, o próximo passo é o que mais importa na tela. Com
+            o carrinho a pilha tem mais de um item, então mostra a contagem e o
+            destino do que está por cima. */}
+        {props.carregando.length > 0 && (
           <span className="carga-atual">
-            carregando <strong>{props.carriedProductName}</strong> ·{" "}
-            {props.carriedProductName.startsWith("aparelho")
-              ? "leve à bancada"
-              : props.carriedProductName.startsWith("caixa")
-                ? "leve à prateleira"
-                : "leve ao balcão"}
+            carregando{" "}
+            {props.capacidade > 1 && (
+              <strong>
+                {props.carregando.length}/{props.capacidade}
+              </strong>
+            )}{" "}
+            <strong>{props.carregando.join(", ")}</strong> ·{" "}
+            {destinoDaCarga(props.carregando[props.carregando.length - 1])}
           </span>
         )}
       </div>
@@ -1271,7 +1294,7 @@ function ModalFechamento({
   podeContinuar: boolean;
   proximoDia: number;
   caixa: number;
-  melhorias: Upgrade[];
+  melhorias: OfertaDeMelhoria[];
   upgrades: Upgrade["id"][];
   onComprar: (id: Upgrade["id"]) => ActionResult;
   onContinuar: () => void;
@@ -1371,9 +1394,16 @@ function ModalFechamento({
                 <p className="palco__etiqueta">Escolha uma melhoria permanente</p>
                 <div className="fechamento__kpis">
                   {melhorias.map((melhoria) => (
-                    <article className="kpi" key={melhoria.id}>
+                    <article className={`kpi kpi--oferta kpi--oferta-${melhoria.motivo}`} key={melhoria.id}>
+                      {/* O selo diz por que este cartão está aqui: sem isso as
+                          três opções parecem sorteio puro e a recomendação do
+                          consultor se perde no meio. */}
+                      <span className="oferta__selo">{SELO_DA_OFERTA[melhoria.motivo]}</span>
                       <strong className="kpi__valor">{melhoria.nome}</strong>
                       <span className="kpi__rotulo">{melhoria.descricao}</span>
+                      {melhoria.justificativa && (
+                        <span className="oferta__motivo">{melhoria.justificativa}</span>
+                      )}
                       <span className="kpi__rotulo">{formatarMoeda(melhoria.custo)}</span>
                       <button className="btn" disabled={caixa < melhoria.custo} title={caixa < melhoria.custo ? "Caixa insuficiente" : undefined} onClick={() => onComprar(melhoria.id)}>Comprar</button>
                     </article>

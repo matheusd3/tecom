@@ -7,7 +7,21 @@ export type CustomerStatus = "waiting" | "beingServed" | "repairing" | "leaving"
 export type GamePhase = "planning" | "active" | "summary";
 export type ShiftEventType = "influencer" | "couponLeak" | "powerSurge";
 export type RepairStatus = "queued" | "inProgress" | "ready" | "returning" | "completed";
-export type UpgradeId = "segundoBalcao" | "bancadaRapida" | "carrinho" | "prateleiraGrande" | "letreiroRua" | "cafeDaEspera" | "bebedouroAutomatico";
+export type UpgradeId =
+  | "segundoBalcao"
+  | "bancadaRapida"
+  | "carrinho"
+  | "prateleiraGrande"
+  | "letreiroRua"
+  | "cafeDaEspera"
+  | "bebedouroAutomatico"
+  // Linha de capacidade de atendimento: quantos itens o atendente leva por vez.
+  | "cestaAtendimento"
+  | "carrinhoAtendimento"
+  | "carrinhoDuplo";
+
+/** Por que esta melhoria está na oferta de hoje — a interface mostra o selo. */
+export type MotivoDaOferta = "consultor" | "sorteio" | "acessivel";
 
 export interface Upgrade {
   id: UpgradeId;
@@ -15,6 +29,33 @@ export interface Upgrade {
   descricao: string;
   custo: number;
   requer: UpgradeId[];
+  /**
+   * Camada do catálogo. Serve para o consultor não empurrar uma compra de
+   * R$ 4.200 no dia 1 e para a oferta subir de patamar junto com a loja.
+   */
+  tier: 1 | 2 | 3;
+  /**
+   * Gargalo que esta melhoria resolve. É o que liga a oferta ao diagnóstico do
+   * consultor: sem isso o sorteio ignora o que está doendo na loja.
+   */
+  resolve: Gargalo;
+}
+
+/** O que estava travando a loja no turno que acabou. */
+export type Gargalo = "fila" | "reparo" | "estoque" | "equipe" | "movimento" | "fluxo";
+
+/** O que ficou guardado no estado sobre a oferta do fechamento atual. */
+export interface OfertaDoDia {
+  id: UpgradeId;
+  motivo: MotivoDaOferta;
+  /** Preenchido quando o motivo é "consultor": a observação que justifica. */
+  justificativa?: string;
+}
+
+/** A oferta já casada com o catálogo, pronta para virar cartão na tela. */
+export interface OfertaDeMelhoria extends Upgrade {
+  motivo: MotivoDaOferta;
+  justificativa?: string;
 }
 
 export interface Product {
@@ -161,7 +202,7 @@ export interface GameState {
   customerSatisfactionAvg: number;
   employeeHappinessAvg: number;
   upgrades: UpgradeId[];
-  upgradesOferecidos: UpgradeId[];
+  upgradesOferecidos: OfertaDoDia[];
   nivelDoBebedouro: number;
 }
 

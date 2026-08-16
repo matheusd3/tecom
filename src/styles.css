@@ -1030,6 +1030,51 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- Cartões da oferta de melhoria ---------- */
+
+/* Os três cartões do fechamento têm papéis diferentes (recomendado pelo
+   consultor, sorteado, cabe no caixa) e o selo é o que deixa isso explícito —
+   sem ele a escolha parece sorteio puro. */
+.kpi--oferta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+
+.oferta__selo {
+  align-self: flex-start;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border: 1px solid var(--borda);
+  color: var(--texto-fraco);
+}
+
+.kpi--oferta-consultor {
+  border-color: rgba(255, 200, 87, 0.55);
+  background: rgba(255, 200, 87, 0.07);
+}
+
+.kpi--oferta-consultor .oferta__selo {
+  border-color: rgba(255, 200, 87, 0.7);
+  color: #ffc857;
+}
+
+.kpi--oferta-acessivel .oferta__selo {
+  border-color: rgba(182, 255, 58, 0.6);
+  color: #b6ff3a;
+}
+
+.oferta__motivo {
+  font-size: 11px;
+  line-height: 1.35;
+  color: #ffc857;
+}
+
 /* ---------- Botões grandes ---------- */
 
 .btn--gigante {

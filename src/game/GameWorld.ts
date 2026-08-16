@@ -12,6 +12,10 @@ import {
   ServiceType,
   ShiftEvent,
   ShiftReport,
+  Gargalo,
+  MotivoDaOferta,
+  OfertaDeMelhoria,
+  OfertaDoDia,
   Upgrade,
   UpgradeId,
 } from "./types";
@@ -22,14 +26,31 @@ const CUSTOMER_PATIENCE_PER_SECOND = 0.38;
 const CUSTOMER_SPAWN_MIN_SECONDS = 7;
 const CUSTOMER_SPAWN_MAX_SECONDS = 15;
 const CAPACIDADE_PRATELEIRA = 10;
+/**
+ * Catálogo em três camadas. O `tier` é liberado pelo dia (ver `tierLiberado`) e
+ * o `requer` encadeia a linha do carrinho — juntos evitam que a compra que
+ * resolve o jogo apareça no dia 1, que era o que o sorteio uniforme fazia.
+ */
 const CATALOGO_MELHORIAS: Upgrade[] = [
-  { id: "segundoBalcao", nome: "Segundo balcão", descricao: "A fila comporta até 5 clientes.", custo: 3500, requer: [] },
-  { id: "bancadaRapida", nome: "Bancada com testes", descricao: "Reparos levam 25% menos tempo.", custo: 3000, requer: [] },
-  { id: "carrinho", nome: "Carrinho de carga", descricao: "Cada viagem repõe até 10 unidades.", custo: 1800, requer: [] },
-  { id: "prateleiraGrande", nome: "Prateleira dupla", descricao: "A exposição por produto passa a 20 unidades.", custo: 2200, requer: [] },
-  { id: "letreiroRua", nome: "Letreiro para a rua", descricao: "Clientes chegam mais rápido.", custo: 2500, requer: [] },
-  { id: "cafeDaEspera", nome: "Café na espera", descricao: "Clientes perdem paciência 25% mais devagar.", custo: 1500, requer: [] },
-  { id: "bebedouroAutomatico", nome: "Bebedouro automático", descricao: "Troca o galão vazio sozinho.", custo: 2000, requer: [] },
+  // Camada 1 — fundação barata, disponível desde o primeiro fechamento.
+  { id: "cafeDaEspera", nome: "Café na espera", descricao: "Clientes perdem paciência 25% mais devagar.", custo: 1500, requer: [], tier: 1, resolve: "fila" },
+  { id: "cestaAtendimento", nome: "Cesta de atendimento", descricao: "Você leva 2 itens de uma vez, entre produtos e aparelhos.", custo: 1600, requer: [], tier: 1, resolve: "movimento" },
+  { id: "carrinho", nome: "Carrinho de carga", descricao: "Cada viagem ao almoxarifado repõe até 10 unidades.", custo: 1800, requer: [], tier: 1, resolve: "estoque" },
+  { id: "bebedouroAutomatico", nome: "Bebedouro automático", descricao: "Troca o galão vazio sozinho.", custo: 2000, requer: [], tier: 1, resolve: "equipe" },
+  // Camada 2 — a partir do dia 3.
+  { id: "prateleiraGrande", nome: "Prateleira dupla", descricao: "A exposição por produto passa a 20 unidades.", custo: 2200, requer: ["carrinho"], tier: 2, resolve: "estoque" },
+  { id: "letreiroRua", nome: "Letreiro para a rua", descricao: "Clientes chegam mais rápido.", custo: 2500, requer: [], tier: 2, resolve: "fluxo" },
+  { id: "carrinhoAtendimento", nome: "Carrinho de atendimento", descricao: "Sobe para 3 itens por vez — dá para montar duas vendas na mesma volta.", custo: 2800, requer: ["cestaAtendimento"], tier: 2, resolve: "movimento" },
+  { id: "bancadaRapida", nome: "Bancada com testes", descricao: "Reparos levam 25% menos tempo.", custo: 3000, requer: [], tier: 2, resolve: "reparo" },
+  // Camada 3 — a partir do dia 5, quando o caixa já aguenta.
+  { id: "segundoBalcao", nome: "Segundo balcão", descricao: "A fila comporta até 5 clientes.", custo: 3500, requer: [], tier: 3, resolve: "fila" },
+  { id: "carrinhoDuplo", nome: "Carrinho duplo", descricao: "Sobe para 4 itens por vez: a loja inteira cabe numa volta só.", custo: 4200, requer: ["carrinhoAtendimento"], tier: 3, resolve: "movimento" },
+];
+/** Quantos itens o atendente leva de uma vez, por melhoria da linha. */
+const CAPACIDADE_POR_MELHORIA: Array<[UpgradeId, number]> = [
+  ["carrinhoDuplo", 4],
+  ["carrinhoAtendimento", 3],
+  ["cestaAtendimento", 2],
 ];
 const SHIFT_DURATION = 120;
 const RESERVA_CLIENTE_SECONDS = 10;
@@ -91,6 +112,11 @@ export class GameWorld {
   private shiftHighlights: string[] = [];
   private supportAttendantTimer = 0;
   private nextDrinkAt = new Map<string, number>();
+  /**
+   * Só os que zeraram a paciência — dispensa no balcão e fechamento da loja não
+   * contam. É o sinal que separa "faltou produto" de "faltou perna".
+   */
+  private shiftPerdidosPorEspera = 0;
 
   constructor() {
     this.state = this.createInitialState();
@@ -134,15 +160,30 @@ export class GameWorld {
     return [...this.opportunities];
   }
 
-  public getUpgradesOferecidos(): Upgrade[] {
-    return this.state.upgradesOferecidos.map((id) => CATALOGO_MELHORIAS.find((item) => item.id === id)!).filter(Boolean);
+  public getUpgradesOferecidos(): OfertaDeMelhoria[] {
+    const ofertas: OfertaDeMelhoria[] = [];
+    for (const oferta of this.state.upgradesOferecidos) {
+      const upgrade = CATALOGO_MELHORIAS.find((item) => item.id === oferta.id);
+      if (upgrade) ofertas.push({ ...upgrade, motivo: oferta.motivo, justificativa: oferta.justificativa });
+    }
+    return ofertas;
   }
 
   public temUpgrade(id: UpgradeId): boolean { return this.state.upgrades.includes(id); }
 
+  /**
+   * Itens que o atendente carrega ao mesmo tempo. É a linha
+   * cesta → carrinho → carrinho duplo; sem nenhuma delas, uma mão, uma coisa.
+   */
+  public capacidadeDeCarga(): number {
+    return CAPACIDADE_POR_MELHORIA.find(([id]) => this.temUpgrade(id))?.[1] ?? 1;
+  }
+
   public comprarUpgrade(id: UpgradeId): ActionResult {
     const upgrade = CATALOGO_MELHORIAS.find((item) => item.id === id);
-    if (!upgrade || !this.state.upgradesOferecidos.includes(id)) return { ok: false, message: "Essa melhoria não está na oferta de hoje." };
+    if (!upgrade || !this.state.upgradesOferecidos.some((oferta) => oferta.id === id)) {
+      return { ok: false, message: "Essa melhoria não está na oferta de hoje." };
+    }
     if (this.state.phase !== "summary") return { ok: false, message: "Melhorias só podem ser compradas no fechamento." };
     if (this.state.upgrades.length && this.state.upgradesOferecidos.length === 0) return { ok: false, message: "Você já comprou a melhoria deste dia." };
     if (upgrade.requer.some((requisito) => !this.temUpgrade(requisito))) return { ok: false, message: "Faltam melhorias anteriores para esta compra." };
@@ -198,6 +239,9 @@ export class GameWorld {
     this.state.shiftRevenue = 0;
     this.state.shiftProfit = 0;
     this.shiftHighlights = [];
+    // Zerado aqui e lido no fechamento: o diagnóstico é sempre do turno que
+    // acabou, não do acumulado da partida.
+    this.shiftPerdidosPorEspera = 0;
     this.state.activeEvent = this.rollShiftEvent();
     if (this.state.activeEvent) this.addHighlight(this.state.activeEvent.description);
     return { ok: true, message: `Turno ${this.state.day} iniciado.` };
@@ -608,6 +652,7 @@ export class GameWorld {
       const urgencyMultiplier = customer.urgency === "high" ? 1.65 : customer.urgency === "medium" ? 1.2 : 1;
       customer.patience = Math.max(0, customer.patience - elapsed * CUSTOMER_PATIENCE_PER_SECOND * urgencyMultiplier * (this.temUpgrade("cafeDaEspera") ? 0.75 : 1));
       if (customer.patience > 0) continue;
+      this.shiftPerdidosPorEspera++;
       this.loseCustomer(customer, "cansou de esperar");
     }
   }
@@ -971,10 +1016,111 @@ export class GameWorld {
     }
   }
   private proximoSpawnCliente(): number { return this.temUpgrade("letreiroRua") ? this.randomBetween(5, 11) : this.randomBetween(CUSTOMER_SPAWN_MIN_SECONDS, CUSTOMER_SPAWN_MAX_SECONDS); }
-  private sortearOfertas(): UpgradeId[] {
-    const disponiveis = CATALOGO_MELHORIAS.filter((item) => !this.temUpgrade(item.id) && item.requer.every((requisito) => this.temUpgrade(requisito)));
-    for (let i = disponiveis.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [disponiveis[i], disponiveis[j]] = [disponiveis[j], disponiveis[i]]; }
-    return disponiveis.slice(0, 3).map((item) => item.id);
+  /** Camada mais alta do catálogo que o dia atual libera. */
+  private tierLiberado(): number {
+    if (this.state.day <= 2) return 1;
+    return this.state.day <= 4 ? 2 : 3;
+  }
+
+  /**
+   * O que travou a loja no turno que acabou, do mais grave para o menos. Cada
+   * entrada devolve as categorias de melhoria que atacam aquele problema — uma
+   * queixa pode ter mais de uma saída, e a oferta escolhe a que estiver
+   * disponível.
+   */
+  private diagnostico(): Array<{ categorias: Gargalo[]; justificativa: string }> {
+    const queixas: Array<{ categorias: Gargalo[]; justificativa: string }> = [];
+
+    const paradoNoFundo = Array.from(this.state.products.values()).filter(
+      (product) => product.stock === 0 && product.storage > 0
+    );
+    if (paradoNoFundo.length) {
+      const unidades = paradoNoFundo.reduce((total, product) => total + product.storage, 0);
+      queixas.push({
+        categorias: ["estoque"],
+        justificativa: `${unidades} unidade(s) paradas no almoxarifado com a prateleira vazia.`,
+      });
+    }
+
+    if (this.shiftPerdidosPorEspera >= 2) {
+      // Cliente que desiste com a mercadoria na prateleira não é falta de
+      // estoque: é o atendente que não deu conta das voltas.
+      queixas.push({
+        categorias: paradoNoFundo.length ? ["fila"] : ["movimento", "fila"],
+        justificativa: `${this.shiftPerdidosPorEspera} cliente(s) cansaram de esperar no turno passado.`,
+      });
+    }
+
+    const naFila = this.state.repairs.filter((repair) => repair.status === "queued").length;
+    if (naFila > 0) {
+      queixas.push({
+        categorias: ["reparo"],
+        justificativa: `${naFila} aparelho(s) ficaram esperando técnico livre.`,
+      });
+    }
+
+    if (this.state.employeeHappinessAvg < 55) {
+      queixas.push({
+        categorias: ["equipe"],
+        justificativa: `Ânimo médio da equipe em ${Math.round(this.state.employeeHappinessAvg)}.`,
+      });
+    }
+
+    if (!queixas.length) {
+      queixas.push({
+        categorias: ["fluxo", "movimento"],
+        justificativa: "A loja deu conta do turno: dá para puxar mais movimento.",
+      });
+    }
+
+    return queixas;
+  }
+
+  /**
+   * Três cartões com papéis diferentes, porque oferta uniforme dava tanto o
+   * "não tenho como pagar nada disso" quanto o "nada aqui resolve meu
+   * problema": um vem do diagnóstico, um é sorteado e um cabe no caixa.
+   */
+  private sortearOfertas(): OfertaDoDia[] {
+    const tetoTier = this.tierLiberado();
+    const disponiveis = CATALOGO_MELHORIAS.filter(
+      (item) =>
+        !this.temUpgrade(item.id) &&
+        item.tier <= tetoTier &&
+        item.requer.every((requisito) => this.temUpgrade(requisito))
+    );
+    const ofertas: OfertaDoDia[] = [];
+    const pegar = (upgrade: Upgrade | undefined, motivo: MotivoDaOferta, justificativa?: string) => {
+      if (!upgrade || ofertas.some((oferta) => oferta.id === upgrade.id)) return;
+      ofertas.push({ id: upgrade.id, motivo, justificativa });
+    };
+    const restantes = () => disponiveis.filter((item) => !ofertas.some((oferta) => oferta.id === item.id));
+
+    // 1. A recomendada: a primeira queixa que tem resposta no catálogo liberado.
+    for (const queixa of this.diagnostico()) {
+      const alvo = disponiveis.find((item) => queixa.categorias.includes(item.resolve));
+      if (alvo) {
+        pegar(alvo, "consultor", queixa.justificativa);
+        break;
+      }
+    }
+
+    // 2. A sorteada, para a oferta não virar uma lista de tarefas.
+    const sobra = restantes();
+    pegar(sobra[Math.floor(Math.random() * sobra.length)], "sorteio");
+
+    // 3. A que cabe no caixa: a mais cara que o dinheiro de hoje alcança. Sem
+    //    ela o fechamento podia mostrar três cartões todos desabilitados.
+    const acessiveis = restantes().filter((item) => item.custo <= this.state.cash);
+    const escolhida = acessiveis.length
+      ? acessiveis.reduce((cara, item) => (item.custo > cara.custo ? item : cara))
+      : restantes().reduce<Upgrade | undefined>(
+          (barata, item) => (!barata || item.custo < barata.custo ? item : barata),
+          undefined
+        );
+    pegar(escolhida, "acessivel");
+
+    return ofertas;
   }
 
   private productStory(type: ProductType): string {

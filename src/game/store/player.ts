@@ -17,7 +17,7 @@ import {
   type Ponto,
 } from "./layout";
 import { PALETA } from "./materials";
-import type { FabricaDePessoas, Personagem, TipoCarga } from "./characters";
+import type { CargaVisual, FabricaDePessoas, Personagem, TipoCarga } from "./characters";
 
 export interface Jogador {
   personagem: Personagem;
@@ -28,6 +28,8 @@ export interface Jogador {
   /** Direção vinda dos controles de toque, entre -1 e 1 em cada eixo. */
   definirMovimentoToque(x: number, z: number): void;
   definirCarga(tipo: TipoCarga | null, hex?: string): void;
+  /** Pilha completa nos braços — o atendente com carrinho leva mais de um. */
+  definirPilha(itens: CargaVisual[]): void;
   dispose(): void;
 }
 
@@ -144,6 +146,14 @@ export function criarJogador(
       cargaAtual = tipo;
       jogador.carga = tipo;
       personagem.definirCarga(tipo, hex);
+    },
+
+    definirPilha(itens) {
+      // `carga` continua sendo o item do topo: é o que a cena usa para saber se
+      // o atendente está de mãos ocupadas.
+      cargaAtual = itens.length ? itens[itens.length - 1].tipo : null;
+      jogador.carga = cargaAtual;
+      personagem.definirPilha(itens);
     },
 
     definirMovimentoToque(x, z) {

@@ -23,6 +23,19 @@ import { PALETA, cor, fosco, materialIcone, neon } from "./materials";
 export type TipoCarga = "produto" | "aparelho" | "caixa" | "galao";
 export type TipoPedido = "produto" | "reparo" | "feliz" | "bravo";
 
+/** Um item na pilha que o personagem carrega. */
+export interface CargaVisual {
+  tipo: TipoCarga;
+  hex?: string;
+}
+
+/**
+ * Teto de itens empilhados — acima disso a torre fica ridícula na tela. Tem de
+ * acompanhar a maior capacidade da linha do carrinho (`CAPACIDADE_POR_MELHORIA`
+ * no GameWorld): item que passar daqui simplesmente não é desenhado.
+ */
+export const PILHA_MAXIMA = 4;
+
 export interface OpcoesPersonagem {
   nome: string;
   /** Cor da camiseta/uniforme — é o que identifica a pessoa de longe. */
@@ -41,6 +54,11 @@ export interface Personagem {
   /** Vira o boneco na direção em que ele anda (ou para onde deve olhar). */
   olharPara(dx: number, dz: number): void;
   definirCarga(tipo: TipoCarga | null, hex?: string): void;
+  /**
+   * Pilha de itens nos braços. O atendente com carrinho leva mais de um; para
+   * cliente e equipe, que carregam um só, `definirCarga` continua servindo.
+   */
+  definirPilha(itens: CargaVisual[]): void;
   definirPedido(tipo: TipoPedido | null): void;
   /** 0..1 — mostra a barrinha de paciência; null esconde. */
   definirPaciencia(fracao: number | null): void;
@@ -214,23 +232,30 @@ function montar(
     aba.parent = corpo;
   }
 
-  // Item carregado, à frente do peito.
-  const carga = CreateBox(`${id}-carga`, { width: 0.78, height: 0.5, depth: 0.5 }, scene);
-  carga.position.set(0, 1.28, 0.66);
-  const matCarga = new StandardMaterial(`${id}-matCarga`, scene);
-  matCarga.diffuseColor = cor(PALETA.ambar);
-  matCarga.emissiveColor = cor(PALETA.ambar).scale(0.35);
-  matCarga.specularColor = Color3.Black();
-  proprios.push(matCarga);
-  carga.material = matCarga;
-  carga.parent = corpo;
-  carga.setEnabled(false);
+  // Itens carregados, empilhados à frente do peito. São quatro caixas prontas
+  // porque o carrinho de atendimento faz o atendente levar mais de uma — as
+  // que sobram ficam desligadas.
+  const pilha = Array.from({ length: PILHA_MAXIMA }, (_, i) => {
+    const caixa = CreateBox(`${id}-carga-${i}`, { width: 0.78, height: 0.5, depth: 0.5 }, scene);
+    // Cada item sobe um degrau e encolhe um pouco: a torre não vira um prédio.
+    caixa.position.set(0, 1.28 + i * 0.4, 0.66);
+    const material = new StandardMaterial(`${id}-matCarga-${i}`, scene);
+    material.diffuseColor = cor(PALETA.ambar);
+    material.emissiveColor = cor(PALETA.ambar).scale(0.35);
+    material.specularColor = Color3.Black();
+    proprios.push(material);
+    caixa.material = material;
+    caixa.parent = corpo;
+    caixa.setEnabled(false);
 
-  const fitaCarga = CreateBox(`${id}-carga-fita`, { width: 0.8, height: 0.52, depth: 0.12 }, scene);
-  fitaCarga.position.copyFrom(carga.position);
-  fitaCarga.material = comum.balao;
-  fitaCarga.parent = corpo;
-  fitaCarga.setEnabled(false);
+    const fita = CreateBox(`${id}-carga-fita-${i}`, { width: 0.8, height: 0.52, depth: 0.12 }, scene);
+    fita.position.copyFrom(caixa.position);
+    fita.material = comum.balao;
+    fita.parent = corpo;
+    fita.setEnabled(false);
+
+    return { caixa, fita, material };
+  });
 
   // Painel de leitura acima da cabeça. Fica num nó que anula o giro do corpo,
   // então balão e barra continuam virados para a câmera fixa sem billboard.
@@ -293,6 +318,28 @@ function montar(
   let fase = 0;
   let carregando = false;
 
+  const aplicarPilha = (itens: CargaVisual[]) => {
+    carregando = itens.length > 0;
+    pilha.forEach((slot, i) => {
+      const item = itens[i];
+      slot.caixa.setEnabled(!!item);
+      slot.fita.setEnabled(!!item && item.tipo === "produto");
+      if (!item) return;
+      const corItem = item.hex ?? (item.tipo === "produto" ? PALETA.ambar : PALETA.metal);
+      slot.material.diffuseColor = cor(corItem);
+      slot.material.emissiveColor = cor(corItem).scale(0.4);
+      // Aparelho em manutenção é achatado como um notebook fechado; o que vem
+      // por cima do primeiro encolhe um pouco, senão a pilha vira um prédio.
+      const encolhe = i === 0 ? 1 : 0.84;
+      slot.caixa.scaling.set(
+        (item.tipo === "galao" ? 0.7 : 1) * encolhe,
+        item.tipo === "aparelho" ? 0.45 : item.tipo === "galao" ? 1.3 : 1,
+        (item.tipo === "aparelho" ? 1.35 : item.tipo === "galao" ? 0.7 : 1) * encolhe
+      );
+      slot.fita.scaling.copyFrom(slot.caixa.scaling);
+    });
+  };
+
   return {
     raiz,
 
@@ -346,16 +393,10 @@ function montar(
     },
 
     definirCarga(tipo, hex) {
-      carregando = tipo !== null;
-      carga.setEnabled(carregando);
-      fitaCarga.setEnabled(carregando && tipo === "produto");
-      if (!carregando) return;
-      const corItem = hex ?? (tipo === "produto" ? PALETA.ambar : PALETA.metal);
-      matCarga.diffuseColor = cor(corItem);
-      matCarga.emissiveColor = cor(corItem).scale(0.4);
-      // Aparelho em manutenção é achatado como um notebook fechado.
-      carga.scaling.set(tipo === "galao" ? 0.7 : 1, tipo === "aparelho" ? 0.45 : tipo === "galao" ? 1.3 : 1, tipo === "aparelho" ? 1.35 : tipo === "galao" ? 0.7 : 1);
+      aplicarPilha(tipo ? [{ tipo, hex }] : []);
     },
+
+    definirPilha: aplicarPilha,
 
     definirPedido(tipo) {
       if (!tipo) {

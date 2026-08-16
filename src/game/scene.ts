@@ -30,6 +30,7 @@ import { criarJogador } from "./store/player";
 import { criarMultidao } from "./store/crowd";
 import { criarEquipe } from "./store/staff";
 import { CORES_PRODUTO, PALETA, cor } from "./store/materials";
+import type { TipoCarga } from "./store/characters";
 import type { Estacao } from "./store/layout";
 
 export type { Estacao } from "./store/layout";
@@ -37,12 +38,28 @@ export type { Estacao } from "./store/layout";
 /** Onde o atendente está parado. "loja" = andando pelos corredores. */
 export type PlayerStation = Estacao | "loja";
 
+/**
+ * Um item nos braços do atendente. Produto e aparelho dividem a capacidade da
+ * linha do carrinho; caixa e galão são carga pesada e ocupam os dois braços.
+ */
+export interface ItemCarregado {
+  tipo: TipoCarga;
+  /** Para "produto" (o que vai ao cliente) e "caixa" (o que vai à prateleira). */
+  produto?: ProductType;
+  /** Para "aparelho": de quem é o equipamento em trânsito. */
+  customerId?: string;
+}
+
 export interface GameHandle {
   scene: Scene;
   world: GameWorld;
   /** Avança a simulação e a animação da cena. deltaSeconds em segundos reais. */
   update(deltaSeconds: number): void;
   getPlayerStation(): PlayerStation;
+  /** A pilha inteira, na ordem em que foi pegada. */
+  getCarried(): ItemCarregado[];
+  /** Quantos itens ainda cabem, já considerando a regra da carga pesada. */
+  espacoLivre(): number;
   getCarriedProduct(): ProductType | undefined;
   getCarriedRepairCustomerId(): string | undefined;
   /** Caixa de reposição vinda do almoxarifado (não é venda, é abastecimento). */
@@ -52,6 +69,9 @@ export interface GameHandle {
   pickUpRepair(customerId: string): boolean;
   pickUpRestock(productType: ProductType): boolean;
   pickUpGallon(): boolean;
+  /** Tira um item específico da pilha (o primeiro que casar com o filtro). */
+  putDownItem(filtro: Partial<ItemCarregado>): boolean;
+  /** Esvazia os braços. */
   putDownProduct(): void;
   setMobileMovement(x: number, z: number): void;
   dispose(): void;
@@ -148,16 +168,49 @@ export async function createGameScene(
   const equipe = criarEquipe(pessoas, world);
   const jogador = criarJogador(pessoas, (estacao) => loja.destacarZona(estacao));
 
-  // O que o atendente tem na mão. É a mesma informação que o GameCanvas usa
+  // O que o atendente tem nos braços. É a mesma informação que o GameCanvas usa
   // para liberar (ou barrar) a ação de cada estação: sem o produto na mão não
   // existe venda, e o aparelho só chega à bancada carregado por ele.
-  let produtoCarregado: ProductType | undefined;
-  let reparoCarregado: string | undefined;
-  let caixaCarregada: ProductType | undefined;
-  let galaoCarregado = false;
+  //
+  // Virou pilha por causa da linha cesta → carrinho → carrinho duplo: produto e
+  // aparelho dividem a capacidade, e caixa de reposição e galão são carga
+  // pesada — ocupam tudo, porque volume de reposição é o papel do carrinho de
+  // carga, não deste.
+  let carregados: ItemCarregado[] = [];
   let vendasVistas = 0;
   let reparosVistos = 0;
-  const maoOcupada = () => !!produtoCarregado || !!reparoCarregado || !!caixaCarregada || galaoCarregado;
+
+  const PESADOS: TipoCarga[] = ["caixa", "galao"];
+  const temPesado = () => carregados.some((item) => PESADOS.includes(item.tipo));
+  const capacidade = () => world.capacidadeDeCarga();
+  const espacoLivre = () => {
+    if (temPesado()) return 0;
+    return Math.max(0, capacidade() - carregados.length);
+  };
+
+  const desenharPilha = () => {
+    jogador.definirPilha(
+      carregados.map((item) => ({
+        tipo: item.tipo,
+        hex:
+          item.tipo === "produto" && item.produto
+            ? corDoProduto(item.produto)
+            : item.tipo === "caixa"
+            ? "#c79a63"
+            : item.tipo === "galao"
+            ? "#7ad6ff"
+            : undefined,
+      }))
+    );
+  };
+
+  const guardar = (item: ItemCarregado): boolean => {
+    // Carga pesada exige braços vazios, dos dois lados da conta.
+    if (PESADOS.includes(item.tipo) ? carregados.length > 0 : espacoLivre() <= 0) return false;
+    carregados.push(item);
+    desenharPilha();
+    return true;
+  };
 
   loja.destacarZona(jogador.estacao);
 
@@ -198,54 +251,58 @@ export async function createGameScene(
       return jogador.estacao ?? "loja";
     },
 
+    getCarried() {
+      return [...carregados];
+    },
+
+    espacoLivre,
+
     getCarriedProduct() {
-      return produtoCarregado;
+      return carregados.find((item) => item.tipo === "produto")?.produto;
     },
 
     getCarriedRepairCustomerId() {
-      return reparoCarregado;
+      return carregados.find((item) => item.tipo === "aparelho")?.customerId;
     },
 
     getCarriedRestock() {
-      return caixaCarregada;
+      return carregados.find((item) => item.tipo === "caixa")?.produto;
     },
-    getCarriedGallon() { return galaoCarregado; },
+    getCarriedGallon() { return carregados.some((item) => item.tipo === "galao"); },
 
     pickUpProduct(productType) {
-      if (maoOcupada()) return false;
-      produtoCarregado = productType;
-      jogador.definirCarga("produto", corDoProduto(productType));
-      return true;
+      return guardar({ tipo: "produto", produto: productType });
     },
 
     pickUpRepair(customerId) {
-      if (maoOcupada()) return false;
-      reparoCarregado = customerId;
-      jogador.definirCarga("aparelho");
-      return true;
+      return guardar({ tipo: "aparelho", customerId });
     },
 
+    // Caixa fechada de almoxarifado: papelão, e não a cor do produto, para não
+    // confundir com o item que vai para o cliente.
     pickUpRestock(productType) {
-      if (maoOcupada()) return false;
-      caixaCarregada = productType;
-      // Caixa fechada de almoxarifado: papelão, e não a cor do produto, para
-      // não confundir com o item que vai para o cliente.
-      jogador.definirCarga("caixa", "#c79a63");
-      return true;
+      return guardar({ tipo: "caixa", produto: productType });
     },
     pickUpGallon() {
-      if (maoOcupada()) return false;
-      galaoCarregado = true;
-      jogador.definirCarga("galao", "#7ad6ff");
+      return guardar({ tipo: "galao" });
+    },
+
+    putDownItem(filtro) {
+      const i = carregados.findIndex(
+        (item) =>
+          (filtro.tipo === undefined || item.tipo === filtro.tipo) &&
+          (filtro.produto === undefined || item.produto === filtro.produto) &&
+          (filtro.customerId === undefined || item.customerId === filtro.customerId)
+      );
+      if (i < 0) return false;
+      carregados.splice(i, 1);
+      desenharPilha();
       return true;
     },
 
     putDownProduct() {
-      produtoCarregado = undefined;
-      reparoCarregado = undefined;
-      caixaCarregada = undefined;
-      galaoCarregado = false;
-      jogador.definirCarga(null);
+      carregados = [];
+      desenharPilha();
     },
 
     setMobileMovement(x, z) {
