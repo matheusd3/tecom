@@ -220,6 +220,27 @@ O Chrome suspende o `requestAnimationFrame` quando o painel não está visível,
    teclas quando o foco está em `input`/`textarea`. Para andar sem teclado,
    `handle.setMobileMovement(x, z)` seguido de `handle.update(1/60)` em laço — a
    posição do atendente se lê no `TransformNode` `pessoa-1`.
+7. **Transição de CSS não avança com o painel oculto, e isso mente na medição.**
+   Sem quadros não há animação, então uma propriedade em `transition` fica presa
+   no valor inicial para sempre. Medindo o painel lateral recolhível,
+   `offsetWidth` e `getComputedStyle().width` devolviam 54px (o estado fechado)
+   mesmo com a classe já removida, a regra certa aplicada e `!important` inline —
+   o que faz parecer erro de cascata e não é. O sintoma que denuncia: outras
+   propriedades da *mesma regra* (`box-shadow`, `max-width`) aplicam normalmente
+   e só a que está em `transition` não. Antes de medir layout:
+
+   ```js
+   document.querySelectorAll('.painel').forEach((p) => { p.style.transition = 'none'; });
+   void document.body.offsetWidth; // força o reflow antes de ler
+   ```
+8. **`resize` não dispara de forma confiável** ao redimensionar o viewport com o
+   painel oculto. Comportamento que dependa do evento (trocar layout ao girar o
+   celular) não dá para verificar aqui — só o estado do carregamento inicial,
+   recarregando a página já no tamanho desejado.
+9. A camada HTML **não entra na captura**: o `readPixels` lê o buffer do WebGL, e
+   a interface do React fica fora dele. Para conferir painel, cartão ou HUD, ler
+   o DOM (`textContent`, `getBoundingClientRect`, `getComputedStyle`) em vez de
+   procurar por imagem.
 
 ---
 
