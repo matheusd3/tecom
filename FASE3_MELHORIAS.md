@@ -211,9 +211,15 @@ O Chrome suspende o `requestAnimationFrame` quando o painel não está visível,
 3. Para ver a imagem: **`gl.readPixels`** (o `canvas.toDataURL` devolve buffer
    vazio nessa situação), jogar os pixels invertidos em um canvas 2D e enviar o
    dataURL por POST para um PHP temporário no XAMPP que grava o PNG.
-4. **O primeiro `render()` depois do load sai vazio — capture duas vezes.**
-5. Para exercitar controles, despachar `KeyboardEvent` em `window`; o jogo ignora
-   teclas quando o foco está em `input`/`textarea`.
+4. **O primeiro `render()` depois do load sai vazio — capture duas vezes.** Vale
+   também depois de cada recarga do HMR, não só do load inicial.
+5. **Com o painel oculto o canvas fica 300×150** (tamanho padrão de `<canvas>`,
+   porque o layout nunca roda) e a captura sai minúscula. Antes de capturar:
+   `cv.style.width='1600px'; cv.style.height='900px'; engine.setSize(1600,900)`.
+6. Para exercitar controles, despachar `KeyboardEvent` em `window`; o jogo ignora
+   teclas quando o foco está em `input`/`textarea`. Para andar sem teclado,
+   `handle.setMobileMovement(x, z)` seguido de `handle.update(1/60)` em laço — a
+   posição do atendente se lê no `TransformNode` `pessoa-1`.
 
 ---
 
