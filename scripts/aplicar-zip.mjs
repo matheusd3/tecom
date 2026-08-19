@@ -17,7 +17,7 @@
 // `git diff`, e só então `git add -A && git commit`.
 
 import { execFileSync, execSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 
@@ -80,6 +80,34 @@ cpSync(origem, raiz, {
   },
 });
 rmSync(temp, { recursive: true, force: true });
+
+// 4b. Base desatualizada: a entrega pode ter sido feita a partir de um clone
+//     antigo, e aí ela DESFAZ commits que entraram depois. Já aconteceu duas
+//     vezes com a mesma constante. Se o zip trouxer BASE.txt com o commit de
+//     origem, dá para dizer exatamente o que ele não tinha em mãos.
+const arqBase = join(raiz, "BASE.txt");
+if (existsSync(arqBase)) {
+  const base = readFileSync(arqBase, "utf8").trim().split(/\s+/)[0];
+  rmSync(arqBase, { force: true });
+  let atras = "";
+  try {
+    atras = git(["log", "--oneline", `${base}..HEAD`]).trim();
+  } catch {
+    console.error(`\nBASE.txt aponta para "${base}", que este repositorio nao conhece.`);
+  }
+  if (atras) {
+    console.error("\n!!! ENTREGA FEITA A PARTIR DE UMA COPIA DESATUALIZADA !!!");
+    console.error(`Base declarada: ${base}`);
+    console.error("Commits que entraram DEPOIS e que a entrega nao tinha:");
+    for (const linha of atras.split(/\r?\n/)) console.error("  " + linha);
+    console.error("\nConfira no diff se algum deles foi desfeito sem querer.");
+  } else {
+    console.log("\nBase da entrega confere com o HEAD atual.");
+  }
+} else {
+  console.log("\nSem BASE.txt: nao da para saber de qual commit a entrega partiu.");
+  console.log("Peca a quem entrega para incluir BASE.txt com `git rev-parse HEAD`.");
+}
 
 // 5. Mostra o estrago antes de qualquer decisão.
 const mudou = git(["status", "--porcelain"]).trim();
