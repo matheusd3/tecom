@@ -92,6 +92,28 @@ console.log(git(["diff", "--stat"]).trim() || "(só arquivos novos)");
 const novos = mudou.split("\n").filter((l) => l.startsWith("??"));
 if (novos.length) console.log("\nnovos:\n" + novos.map((l) => "  " + l.slice(3)).join("\n"));
 
+// 5b. Zip achatado: o arquivo cai na raiz em vez da pasta de origem, o build
+//     passa (compilou o código ANTIGO) e o script diria "OK" sem nada ter sido
+//     aplicado. É o pior erro possível aqui, porque é silencioso.
+const novosNaRaiz = novos
+  .map((l) => l.slice(3).trim())
+  .filter((n) => !n.includes("/") && !n.endsWith("/"));
+if (novosNaRaiz.length) {
+  const rastreados = git(["ls-files"]).split(/\r?\n/);
+  const suspeitos = novosNaRaiz
+    .map((nome) => ({ nome, iguais: rastreados.filter((f) => f.endsWith("/" + nome)) }))
+    .filter((s) => s.iguais.length);
+  if (suspeitos.length) {
+    console.error("\n!!! O ZIP PARECE ACHATADO !!!");
+    for (const s of suspeitos) {
+      console.error(`  "${s.nome}" caiu na raiz, mas o projeto ja tem: ${s.iguais.join(", ")}`);
+    }
+    console.error("\nProvavelmente e para substituir aquele arquivo, nao criar um novo na raiz.");
+    console.error("Mova para o lugar certo ANTES de commitar: senao o build passa compilando");
+    console.error("o codigo antigo e a mudanca some sem aviso nenhum.");
+  }
+}
+
 // 6. Valida. Falhar aqui não desfaz nada: o trabalho fica na árvore para
 //    você corrigir, que é melhor que descobrir depois do commit.
 console.log("\n--- npm run check ---");
