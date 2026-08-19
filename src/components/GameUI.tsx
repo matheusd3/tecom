@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PlayerStation } from "@/game/scene";
-import { CUSTOMER_PRICE_TOLERANCE } from "@/game/types";
+import { CONSULTA_GAVETA, CUSTOMER_PRICE_TOLERANCE } from "@/game/types";
 import type {
   ActionResult,
   Customer,
@@ -166,13 +166,6 @@ function AnelDeConserto({ fracao, segundos }: { fracao: number; segundos: number
 }
 
 /** Abaixo disso o painel lateral vira gaveta por cima da loja (ver styles.css). */
-/**
- * Quando o painel lateral é gaveta sobre a loja. A consulta é a MESMA string
- * do CSS, lida por matchMedia em vez de reescrita: com a condição duplicada,
- * o JS achava que era gaveta em tablet e o CSS não, e o painel virava uma
- * faixa de 62px com o conteúdo escondido.
- */
-const CONSULTA_GAVETA = "(pointer: coarse) and (orientation: landscape) and (max-height: 500px)";
 
 function emModoGaveta(): boolean {
   return typeof window !== "undefined" && window.matchMedia(CONSULTA_GAVETA).matches;

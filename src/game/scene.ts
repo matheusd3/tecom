@@ -13,8 +13,6 @@
 import { Scene } from "@babylonjs/core/scene";
 import type { Engine } from "@babylonjs/core/Engines/engine";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
-import { Camera } from "@babylonjs/core/Cameras/camera";
-
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { GlowLayer } from "@babylonjs/core/Layers/glowLayer";
@@ -25,6 +23,7 @@ import { DynamicTexture } from "@babylonjs/core/Materials/Textures/dynamicTextur
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 
 import { GameWorld } from "./GameWorld";
+import { CONSULTA_GAVETA } from "./types";
 import type { ProductType } from "./types";
 import { construirLoja } from "./store/props";
 import { criarFabricaDePessoas } from "./store/characters";
@@ -132,17 +131,23 @@ export async function createGameScene(
   );
   camera.minZ = 0.5;
   camera.maxZ = 220;
-    camera.fov = 0.82;
-  // FOV horizontal fixo evita que a loja encolha verticalmente em celulares
-  // deitados; alpha e beta continuam fixos para preservar a leitura espacial.
-  camera.fovMode = Camera.FOVMODE_HORIZONTAL_FIXED;
-  const ajustarCameraMobile = () => {
-    const aspect = engine.getAspectRatio(camera);
-    const coarse = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
-    camera.radius = coarse && aspect > 1.35 ? 39 : 43;
+  // Enquadramento por espaço disponível, NÃO por proporção da tela.
+  //
+  // Com FOV vertical (o padrão) a loja ocupa sempre a mesma fração da ALTURA,
+  // qualquer que seja a tela — então trocar para FOV horizontal fixo não
+  // "preenchia" nada: só cortava o letreiro, o almoxarifado e a entrada onde
+  // a fila chega. O que muda entre desktop e celular não é a proporção, é
+  // quem ocupa as laterais: no desktop os painéis comem 594px e a loja tem de
+  // caber no miolo; em modo gaveta sobra a tela quase toda e dá para chegar
+  // mais perto. Em 844x330, 34 mostra a loja inteira e bem maior que 43.
+  const RAIO_DESKTOP = 43;
+  const RAIO_GAVETA = 34;
+  const ajustarEnquadramento = () => {
+    const gaveta = typeof window !== "undefined" && window.matchMedia(CONSULTA_GAVETA).matches;
+    camera.radius = gaveta ? RAIO_GAVETA : RAIO_DESKTOP;
   };
-  ajustarCameraMobile();
-  engine.onResizeObservable.add(ajustarCameraMobile);
+  ajustarEnquadramento();
+  engine.onResizeObservable.add(ajustarEnquadramento);
 
   const ambiente = new HemisphericLight("luzAmbiente", new Vector3(0.2, 1, -0.3), scene);
   ambiente.intensity = 0.5;

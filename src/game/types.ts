@@ -235,6 +235,14 @@ export const DOSES_CAFE = 10;
  */
 export const CUSTOMER_PRICE_TOLERANCE = 1.15;
 
+/**
+ * Quando o painel lateral é gaveta sobre a loja, em vez de coluna ao lado.
+ * Mora aqui porque a interface E a cena precisam da mesma resposta: sem os
+ * painéis comendo as laterais, a câmera pode chegar mais perto.
+ */
+export const CONSULTA_GAVETA =
+  "(pointer: coarse) and (orientation: landscape) and (max-height: 500px)";
+
 export interface Opportunity {
   id: string;
   type: "sales" | "service" | "hiring" | "pricing" | "stock";
