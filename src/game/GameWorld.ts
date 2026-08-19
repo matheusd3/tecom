@@ -20,7 +20,7 @@ import {
   Upgrade,
   UpgradeId,
 } from "./types";
-import { DOSES_CAFE, GOLES_BEBEDOURO } from "./types";
+import { CUSTOMER_PRICE_TOLERANCE, DOSES_CAFE, GOLES_BEBEDOURO } from "./types";
 
 /** Salário é mensal e o turno é um dia: a folha diária é um trinta avos. */
 const DIAS_DO_MES = 30;
@@ -113,13 +113,6 @@ const LIMITE_EQUIPE: Record<EmployeeRole, number> = {
 };
 /** Preço de vitrine não passa disso vezes o valor de mercado do produto. */
 const PRICE_CEILING_FACTOR = 2.5;
-/**
- * Faixa de aceitação acima do preço de vitrine. O limite anterior de 8% fazia
- * a venda direta depender de um intervalo estreito demais: no dia 1 o jogador
- * precisava negociar quase todo cliente. 15% mantém o preço relevante, mas
- * transforma o atendimento manual em estratégia, não em loteria.
- */
-const CUSTOMER_PRICE_TOLERANCE = 1.15;
 /** Quanto cada ajuda do jogador tira do prazo do conserto. */
 const REPAIR_HELP_SECONDS = 7;
 /** Intervalo mínimo entre duas ajudas, para E repetido não zerar o reparo. */

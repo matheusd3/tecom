@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PlayerStation } from "@/game/scene";
+import { CUSTOMER_PRICE_TOLERANCE } from "@/game/types";
 import type {
   ActionResult,
   Customer,
@@ -165,12 +166,16 @@ function AnelDeConserto({ fracao, segundos }: { fracao: number; segundos: number
 }
 
 /** Abaixo disso o painel lateral vira gaveta por cima da loja (ver styles.css). */
-const LARGURA_GAVETA = 820;
+/**
+ * Quando o painel lateral é gaveta sobre a loja. A consulta é a MESMA string
+ * do CSS, lida por matchMedia em vez de reescrita: com a condição duplicada,
+ * o JS achava que era gaveta em tablet e o CSS não, e o painel virava uma
+ * faixa de 62px com o conteúdo escondido.
+ */
+const CONSULTA_GAVETA = "(pointer: coarse) and (orientation: landscape) and (max-height: 500px)";
 
-function telaEstreita(): boolean {
-  if (typeof window === "undefined") return false;
-  const touchLandscape = window.matchMedia("(pointer: coarse) and (orientation: landscape)").matches;
-  return touchLandscape || window.innerWidth <= LARGURA_GAVETA;
+function emModoGaveta(): boolean {
+  return typeof window !== "undefined" && window.matchMedia(CONSULTA_GAVETA).matches;
 }
 
 /** Para onde levar o item que está por cima da pilha. */
@@ -374,7 +379,7 @@ export function GameUI(props: GameUIProps) {
   // No celular deitado o painel é uma gaveta sobre a loja, então ele nasce
   // fechado: aberto, tapa metade de uma tela de 375px de altura. No desktop ele
   // nasce aberto, que é onde ele cabe ao lado da loja.
-  const [painelRecolhido, setPainelRecolhido] = useState(telaEstreita);
+  const [painelRecolhido, setPainelRecolhido] = useState(emModoGaveta);
   // O fechamento pode ser dispensado para o jogador repor estoque antes de
   // abrir o dia seguinte: o núcleo vai direto de "summary" para o turno novo.
   const [resumoFechado, setResumoFechado] = useState(false);
@@ -392,13 +397,13 @@ export function GameUI(props: GameUIProps) {
     // estava fechado, reabre sozinho em vez de esconder a ação disponível.
     // No celular NÃO: lá ele é gaveta sobre a loja, e abrir sozinho toda vez
     // que o atendente encosta numa prateleira taparia o jogo.
-    if (!telaEstreita()) setPainelRecolhido(false);
+    if (!emModoGaveta()) setPainelRecolhido(false);
   }, [estacao]);
 
   // Girar o celular ou redimensionar a janela troca o papel do painel: gaveta
   // fechada em tela estreita, coluna aberta em tela larga.
   useEffect(() => {
-    const aoRedimensionar = () => setPainelRecolhido(telaEstreita());
+    const aoRedimensionar = () => setPainelRecolhido(emModoGaveta());
     window.addEventListener("resize", aoRedimensionar);
     return () => window.removeEventListener("resize", aoRedimensionar);
   }, []);
@@ -1237,7 +1242,7 @@ function PostoAtendimento({
   // coisa só rendia recusa do núcleo.
   const abaixoDaVitrine = cliente.budget < precoVitrine;
   // Mesma faixa de 8% que o núcleo usa para separar venda direta de ágio.
-  const acimaDaVitrine = cliente.budget > precoVitrine * 1.08;
+  const acimaDaVitrine = cliente.budget > precoVitrine * CUSTOMER_PRICE_TOLERANCE;
   const precoFechamento = abaixoDaVitrine || acimaDaVitrine ? cliente.budget : precoVitrine;
   const diferenca =
     precoVitrine > 0 ? Math.round(((precoFechamento - precoVitrine) / precoVitrine) * 100) : 0;

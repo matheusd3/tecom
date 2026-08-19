@@ -223,6 +223,18 @@ export interface GameState {
 export const GOLES_BEBEDOURO = 8;
 export const DOSES_CAFE = 10;
 
+/**
+ * Quanto acima da vitrine o cliente ainda fecha sem negociação. Mora aqui
+ * porque TRÊS camadas precisam do mesmo número: o núcleo decide a venda
+ * direta, a ponte do teclado monta o cartão de ágio e o cartão do balcão
+ * escolhe o rótulo do botão.
+ *
+ * Já divergiu duas vezes (1,15 no núcleo contra 1,08 nas outras duas), e o
+ * sintoma é cruel de achar: o MESMO cliente vira venda direta para o
+ * auxiliar e pedido de ágio para o jogador. Não copie o número.
+ */
+export const CUSTOMER_PRICE_TOLERANCE = 1.15;
+
 export interface Opportunity {
   id: string;
   type: "sales" | "service" | "hiring" | "pricing" | "stock";

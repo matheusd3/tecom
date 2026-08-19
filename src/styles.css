@@ -2065,7 +2065,7 @@ button {
   display: none;
 }
 
-@media (pointer: coarse) and (orientation: landscape) {
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
   /* Celular deitado escondia os DOIS painéis, e com eles sumiam comprar
      estoque, ajustar preço, contratar e o consultor inteiro — sobrava andar e
      apertar E. Agora o painel esquerdo vira gaveta: nasce recolhido numa faixa
