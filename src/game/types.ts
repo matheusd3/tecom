@@ -220,6 +220,16 @@ export interface GameState {
 export const GOLES_BEBEDOURO = 8;
 export const DOSES_CAFE = 10;
 
+/**
+ * Quanto acima da vitrine o cliente ainda fecha sem negociação. Mora aqui
+ * pelo mesmo motivo dos goles: o núcleo decide a venda direta, a ponte do
+ * teclado monta o cartão de ágio e o cartão do balcão escolhe o rótulo do
+ * botão. Repetida em três lugares, ela já divergiu — 1,15 no núcleo e 1,08
+ * nos outros dois — e o mesmo cliente virava venda direta para o auxiliar e
+ * pedido de ágio para o jogador.
+ */
+export const CUSTOMER_PRICE_TOLERANCE = 1.15;
+
 export interface Opportunity {
   id: string;
   type: "sales" | "service" | "hiring" | "pricing" | "stock";

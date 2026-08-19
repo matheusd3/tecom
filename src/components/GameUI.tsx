@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PlayerStation } from "@/game/scene";
+import { CUSTOMER_PRICE_TOLERANCE } from "@/game/types";
 import type {
   ActionResult,
   Customer,
@@ -1205,7 +1206,7 @@ function PostoAtendimento({
   // coisa só rendia recusa do núcleo.
   const abaixoDaVitrine = cliente.budget < precoVitrine;
   // Mesma faixa de 8% que o núcleo usa para separar venda direta de ágio.
-  const acimaDaVitrine = cliente.budget > precoVitrine * 1.08;
+  const acimaDaVitrine = cliente.budget > precoVitrine * CUSTOMER_PRICE_TOLERANCE;
   const precoFechamento = abaixoDaVitrine || acimaDaVitrine ? cliente.budget : precoVitrine;
   const diferenca =
     precoVitrine > 0 ? Math.round(((precoFechamento - precoVitrine) / precoVitrine) * 100) : 0;
