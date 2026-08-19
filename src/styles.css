@@ -2060,7 +2060,13 @@ button {
   display: none;
 }
 
-@media (pointer: coarse) and (max-width: 820px) and (orientation: landscape) {
+/* A gaveta existe porque a tela é BAIXA, não porque é estreita: celular
+   deitado tem 390 a 430px de altura e os painéis comeriam a loja inteira.
+   Amarrar isso a max-width: 820px deixava de fora todo telefone moderno
+   (844, 852, 915, 932) — eles caíam no layout de desktop com 70% da tela
+   ocupada por painel. Tablet em paisagem tem 768px de altura e continua,
+   corretamente, no layout normal. */
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
   /* Celular deitado escondia os DOIS painéis, e com eles sumiam comprar
      estoque, ajustar preço, contratar e o consultor inteiro — sobrava andar e
      apertar E. Agora o painel esquerdo vira gaveta: nasce recolhido numa faixa

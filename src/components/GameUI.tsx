@@ -165,11 +165,15 @@ function AnelDeConserto({ fracao, segundos }: { fracao: number; segundos: number
   );
 }
 
-/** Abaixo disso o painel lateral vira gaveta por cima da loja (ver styles.css). */
-const LARGURA_GAVETA = 820;
+/**
+ * Quando o painel lateral é gaveta sobre a loja. A condição é lida do CSS em
+ * vez de reescrita aqui: já aconteceu neste projeto de o mesmo número existir
+ * em dois lugares e divergir, e aí a tela e o comportamento discordam.
+ */
+const CONSULTA_GAVETA = "(pointer: coarse) and (orientation: landscape) and (max-height: 500px)";
 
-function telaEstreita(): boolean {
-  return typeof window !== "undefined" && window.innerWidth <= LARGURA_GAVETA;
+function emModoGaveta(): boolean {
+  return typeof window !== "undefined" && window.matchMedia(CONSULTA_GAVETA).matches;
 }
 
 /** Para onde levar o item que está por cima da pilha. */
@@ -352,7 +356,7 @@ export function GameUI(props: GameUIProps) {
   // No celular deitado o painel é uma gaveta sobre a loja, então ele nasce
   // fechado: aberto, tapa metade de uma tela de 375px de altura. No desktop ele
   // nasce aberto, que é onde ele cabe ao lado da loja.
-  const [painelRecolhido, setPainelRecolhido] = useState(telaEstreita);
+  const [painelRecolhido, setPainelRecolhido] = useState(emModoGaveta);
   // O fechamento pode ser dispensado para o jogador repor estoque antes de
   // abrir o dia seguinte: o núcleo vai direto de "summary" para o turno novo.
   const [resumoFechado, setResumoFechado] = useState(false);
@@ -370,13 +374,13 @@ export function GameUI(props: GameUIProps) {
     // estava fechado, reabre sozinho em vez de esconder a ação disponível.
     // No celular NÃO: lá ele é gaveta sobre a loja, e abrir sozinho toda vez
     // que o atendente encosta numa prateleira taparia o jogo.
-    if (!telaEstreita()) setPainelRecolhido(false);
+    if (!emModoGaveta()) setPainelRecolhido(false);
   }, [estacao]);
 
   // Girar o celular ou redimensionar a janela troca o papel do painel: gaveta
   // fechada em tela estreita, coluna aberta em tela larga.
   useEffect(() => {
-    const aoRedimensionar = () => setPainelRecolhido(telaEstreita());
+    const aoRedimensionar = () => setPainelRecolhido(emModoGaveta());
     window.addEventListener("resize", aoRedimensionar);
     return () => window.removeEventListener("resize", aoRedimensionar);
   }, []);
