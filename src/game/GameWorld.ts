@@ -20,7 +20,7 @@ import {
   Upgrade,
   UpgradeId,
 } from "./types";
-import { CUSTOMER_PRICE_TOLERANCE, DOSES_CAFE, GOLES_BEBEDOURO } from "./types";
+import { DOSES_CAFE, GOLES_BEBEDOURO } from "./types";
 
 /** Salário é mensal e o turno é um dia: a folha diária é um trinta avos. */
 const DIAS_DO_MES = 30;
@@ -113,6 +113,13 @@ const LIMITE_EQUIPE: Record<EmployeeRole, number> = {
 };
 /** Preço de vitrine não passa disso vezes o valor de mercado do produto. */
 const PRICE_CEILING_FACTOR = 2.5;
+/**
+ * Faixa de aceitação acima do preço de vitrine. O limite anterior de 8% fazia
+ * a venda direta depender de um intervalo estreito demais: no dia 1 o jogador
+ * precisava negociar quase todo cliente. 15% mantém o preço relevante, mas
+ * transforma o atendimento manual em estratégia, não em loteria.
+ */
+const CUSTOMER_PRICE_TOLERANCE = 1.15;
 /** Quanto cada ajuda do jogador tira do prazo do conserto. */
 const REPAIR_HELP_SECONDS = 7;
 /** Intervalo mínimo entre duas ajudas, para E repetido não zerar o reparo. */
@@ -167,11 +174,14 @@ export class GameWorld {
     this.processarCafe();
     this.runSupportAttendant(elapsed);
     this.removeDepartedCustomers();
-    // Desconto pendente morre com o cliente que o motivou.
-    if (this.state.pendingDiscount) {
-      const cliente = this.state.customers.get(this.state.pendingDiscount.customerId);
-      if (!cliente || cliente.status !== "waiting") this.state.pendingDiscount = undefined;
-    }
+        // Pedidos pendentes morrem com o cliente que os motivou. O primeiro continua
+    // exposto no cartão atual para preservar o contrato da interface.
+    this.state.pendingDiscounts = this.state.pendingDiscounts.filter((pedido) => {
+      const cliente = this.state.customers.get(pedido.customerId);
+      return !!cliente && cliente.status === "waiting";
+    });
+    this.state.pendingDiscount = this.state.pendingDiscounts[0];
+
     this.updateDemand(elapsed);
     this.updateAverages();
 
@@ -596,30 +606,33 @@ export class GameWorld {
   /** Fecha a venda que o auxiliar não podia decidir sozinho. */
   public approveDiscount(): ActionResult {
     if (this.pausado()) return TURNO_PAUSADO();
-    const pedido = this.state.pendingDiscount;
+        const pedido = this.state.pendingDiscounts[0];
     if (!pedido) return { ok: false, message: "Não há desconto esperando aprovação." };
     const helper = Array.from(this.state.employees.values()).find(
-      (employee) => employee.role === "seller" && employee.id !== "seller-1" && !employee.isBusy
+      (employee) => employee.role === "seller" && employee.id !== "seller-1" && employee.name === pedido.askedBy
     );
     const resultado = this.sellToCustomer(pedido.customerId, pedido.customerPrice, helper?.id);
     if (resultado.ok) {
-      this.state.pendingDiscount = undefined;
+      this.state.pendingDiscounts.shift();
+      this.state.pendingDiscount = this.state.pendingDiscounts[0];
       this.state.supportTask = `${pedido.askedBy} fechou ${pedido.productName} com o desconto aprovado.`;
       this.state.supportTaskKind = "venda";
       if (helper) {
         helper.isBusy = true;
-        helper.busyUntil = this.state.time + 4;
+        helper.busyUntil = this.state.time + this.duracaoDoFuncionario(helper, 4);
       }
     }
     return resultado;
+
   }
 
   public declineDiscount(): ActionResult {
     if (this.pausado()) return TURNO_PAUSADO();
-    const pedido = this.state.pendingDiscount;
+        const pedido = this.state.pendingDiscounts.shift();
     if (!pedido) return { ok: false, message: "Não há desconto esperando aprovação." };
-    this.state.pendingDiscount = undefined;
+    this.state.pendingDiscount = this.state.pendingDiscounts[0];
     return { ok: true, message: pedido.kind === "premium" ? `Ágio recusado para ${pedido.customerName}.` : `Preço mantido para ${pedido.customerName}.` };
+
   }
 
   /** Retira um reparo pronto para devolvê-lo ao balcão. */
@@ -695,8 +708,10 @@ export class GameWorld {
       cash: 10_000,
       shiftRevenue: 0, shiftProfit: 0,
       totalRevenue: 0, totalExpenses: 0,
-      products, employees, customers: new Map(), sales: [], repairs: [],
+            products, employees, customers: new Map(), sales: [], repairs: [],
+      pendingDiscounts: [],
       missedSales: 0, missedRepairs: 0, idleEmployeeTime: 0,
+
       customerSatisfactionAvg: 80, employeeHappinessAvg: 79,
       upgrades: [], upgradesOferecidos: [],
       nivelDoBebedouro: GOLES_BEBEDOURO,
@@ -795,8 +810,10 @@ export class GameWorld {
       this.state.supportTaskKind = undefined;
       return;
     }
+    // O despacho acompanha a disponibilidade, em vez de esperar um relógio de 7 s.
+    // O pequeno intervalo evita reavaliar a mesma tarefa várias vezes por frame.
     this.supportAttendantTimer += elapsed;
-    if (this.supportAttendantTimer < 7) return;
+    if (this.supportAttendantTimer < 0.75) return;
     this.supportAttendantTimer = 0;
 
     // Cada auxiliar livre pega a própria tarefa nesta rodada. Antes só o
@@ -853,8 +870,9 @@ export class GameWorld {
     // Cliente que quer comprar mas não paga a vitrine: o auxiliar não decide,
     // ele PERGUNTA. Antes ele simplesmente pulava, e de fora parecia que o
     // vendedor às vezes trabalhava e às vezes não.
-    if (!this.state.pendingDiscount) {
+        if (!this.state.pendingDiscounts.some((item) => item.askedBy === helper.name)) {
       const precisaAval = Array.from(this.state.customers.values()).find((customer) => {
+
         if (!atendivel(customer) || !customer.needsProduct) return false;
         const product = this.state.products.get(customer.needsProduct);
         return !!product && product.stock > 0 && (customer.budget < product.sellingPrice || customer.budget > product.sellingPrice * CUSTOMER_PRICE_TOLERANCE);
@@ -888,10 +906,16 @@ export class GameWorld {
           this.state.supportTask = `${veredito.porQuem} recusou ${this.nomeDoPedido(kind)} em ${product.name}: ${veredito.motivo}`;
           return true;
         }
-        this.state.pendingDiscount = pedido;
+                if (!this.state.pendingDiscounts.some((item) => item.customerId === pedido.customerId || item.askedBy === helper.name)) {
+          this.state.pendingDiscounts.push(pedido);
+          this.state.pendingDiscount = this.state.pendingDiscounts[0];
+        }
+        // O pedido não ocupa o auxiliar: ele continua ajudando em reparo, café
+        // ou estoque enquanto o jogador decide.
         this.state.supportTask = `${helper.name} pediu aprovação de ${kind === "premium" ? "ágio" : "desconto"} em ${product.name}.`;
         this.state.supportTaskKind = undefined;
-        return true;
+        return false;
+
       }
     }
 

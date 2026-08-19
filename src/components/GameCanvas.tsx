@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { createGameScene, type GameHandle, type PlayerStation } from "@/game/scene";
 import type { GameWorld } from "@/game/GameWorld";
-import { CUSTOMER_PRICE_TOLERANCE, DOSES_CAFE, GOLES_BEBEDOURO } from "@/game/types";
+import { DOSES_CAFE, GOLES_BEBEDOURO } from "@/game/types";
 import type {
   ActionResult,
   DiscountRequest,
@@ -333,7 +333,7 @@ export default function GameCanvas() {
         // desconto existia aqui, e quem atendia sozinho vendia por 62 a quem
         // pagaria 100 sem nem saber que tinha deixado dinheiro na mesa.
         const foraDaVitrine =
-          !!product && (comprador.budget < preco || comprador.budget > preco * CUSTOMER_PRICE_TOLERANCE);
+          !!product && (comprador.budget < preco || comprador.budget > preco * 1.08);
         if (product && foraDaVitrine) {
           const pedido: DiscountRequest = {
             customerId: comprador.id,

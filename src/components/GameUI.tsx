@@ -6,7 +6,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PlayerStation } from "@/game/scene";
-import { CUSTOMER_PRICE_TOLERANCE } from "@/game/types";
 import type {
   ActionResult,
   Customer,
@@ -165,15 +164,13 @@ function AnelDeConserto({ fracao, segundos }: { fracao: number; segundos: number
   );
 }
 
-/**
- * Quando o painel lateral é gaveta sobre a loja. A condição é lida do CSS em
- * vez de reescrita aqui: já aconteceu neste projeto de o mesmo número existir
- * em dois lugares e divergir, e aí a tela e o comportamento discordam.
- */
-const CONSULTA_GAVETA = "(pointer: coarse) and (orientation: landscape) and (max-height: 500px)";
+/** Abaixo disso o painel lateral vira gaveta por cima da loja (ver styles.css). */
+const LARGURA_GAVETA = 820;
 
-function emModoGaveta(): boolean {
-  return typeof window !== "undefined" && window.matchMedia(CONSULTA_GAVETA).matches;
+function telaEstreita(): boolean {
+  if (typeof window === "undefined") return false;
+  const touchLandscape = window.matchMedia("(pointer: coarse) and (orientation: landscape)").matches;
+  return touchLandscape || window.innerWidth <= LARGURA_GAVETA;
 }
 
 /** Para onde levar o item que está por cima da pilha. */
@@ -352,11 +349,32 @@ export function GameUI(props: GameUIProps) {
     Partial<Record<ProductType, string>>
   >({});
   const [selecaoLocal, setSelecaoLocal] = useState<string | null>(null);
-  const [confirmarReinicio, setConfirmarReinicio] = useState(false);
+    const [confirmarReinicio, setConfirmarReinicio] = useState(false);
+  const [telaCheia, setTelaCheia] = useState(false);
+
+  const alternarTelaCheia = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen?.();
+        try {
+          await (screen.orientation as ScreenOrientation & { lock?: (tipo: string) => Promise<void> }).lock?.("landscape");
+        } catch {
+          // Alguns navegadores só permitem orientação travada quando já estão em fullscreen.
+        }
+        setTelaCheia(true);
+      } else {
+        await document.exitFullscreen?.();
+        setTelaCheia(false);
+      }
+    } catch {
+      setTelaCheia(Boolean(document.fullscreenElement));
+    }
+  };
+
   // No celular deitado o painel é uma gaveta sobre a loja, então ele nasce
   // fechado: aberto, tapa metade de uma tela de 375px de altura. No desktop ele
   // nasce aberto, que é onde ele cabe ao lado da loja.
-  const [painelRecolhido, setPainelRecolhido] = useState(emModoGaveta);
+  const [painelRecolhido, setPainelRecolhido] = useState(telaEstreita);
   // O fechamento pode ser dispensado para o jogador repor estoque antes de
   // abrir o dia seguinte: o núcleo vai direto de "summary" para o turno novo.
   const [resumoFechado, setResumoFechado] = useState(false);
@@ -374,13 +392,13 @@ export function GameUI(props: GameUIProps) {
     // estava fechado, reabre sozinho em vez de esconder a ação disponível.
     // No celular NÃO: lá ele é gaveta sobre a loja, e abrir sozinho toda vez
     // que o atendente encosta numa prateleira taparia o jogo.
-    if (!emModoGaveta()) setPainelRecolhido(false);
+    if (!telaEstreita()) setPainelRecolhido(false);
   }, [estacao]);
 
   // Girar o celular ou redimensionar a janela troca o papel do painel: gaveta
   // fechada em tela estreita, coluna aberta em tela larga.
   useEffect(() => {
-    const aoRedimensionar = () => setPainelRecolhido(emModoGaveta());
+    const aoRedimensionar = () => setPainelRecolhido(telaEstreita());
     window.addEventListener("resize", aoRedimensionar);
     return () => window.removeEventListener("resize", aoRedimensionar);
   }, []);
@@ -641,7 +659,16 @@ export function GameUI(props: GameUIProps) {
               {gameState.isPaused ? "Retomar" : "Pausar"}
             </button>
           )}
+                    <button
+            className="btn btn--pequeno btn--fullscreen"
+            onClick={alternarTelaCheia}
+            title="Abrir a loja em tela cheia"
+            aria-label="Alternar tela cheia"
+          >
+            {telaCheia ? "Sair" : "Tela cheia"}
+          </button>
           {VELOCIDADES.map((v) => (
+
             <button
               key={v}
               className={`btn btn--pequeno ${
@@ -1210,7 +1237,7 @@ function PostoAtendimento({
   // coisa só rendia recusa do núcleo.
   const abaixoDaVitrine = cliente.budget < precoVitrine;
   // Mesma faixa de 8% que o núcleo usa para separar venda direta de ágio.
-  const acimaDaVitrine = cliente.budget > precoVitrine * CUSTOMER_PRICE_TOLERANCE;
+  const acimaDaVitrine = cliente.budget > precoVitrine * 1.08;
   const precoFechamento = abaixoDaVitrine || acimaDaVitrine ? cliente.budget : precoVitrine;
   const diferenca =
     precoVitrine > 0 ? Math.round(((precoFechamento - precoVitrine) / precoVitrine) * 100) : 0;

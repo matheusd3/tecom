@@ -13,6 +13,8 @@
 import { Scene } from "@babylonjs/core/scene";
 import type { Engine } from "@babylonjs/core/Engines/engine";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { Camera } from "@babylonjs/core/Cameras/camera";
+
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { GlowLayer } from "@babylonjs/core/Layers/glowLayer";
@@ -130,7 +132,17 @@ export async function createGameScene(
   );
   camera.minZ = 0.5;
   camera.maxZ = 220;
-  camera.fov = 0.82;
+    camera.fov = 0.82;
+  // FOV horizontal fixo evita que a loja encolha verticalmente em celulares
+  // deitados; alpha e beta continuam fixos para preservar a leitura espacial.
+  camera.fovMode = Camera.FOVMODE_HORIZONTAL_FIXED;
+  const ajustarCameraMobile = () => {
+    const aspect = engine.getAspectRatio(camera);
+    const coarse = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+    camera.radius = coarse && aspect > 1.35 ? 39 : 43;
+  };
+  ajustarCameraMobile();
+  engine.onResizeObservable.add(ajustarCameraMobile);
 
   const ambiente = new HemisphericLight("luzAmbiente", new Vector3(0.2, 1, -0.3), scene);
   ambiente.intensity = 0.5;

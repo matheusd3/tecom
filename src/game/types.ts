@@ -198,8 +198,11 @@ export interface GameState {
   supportTask?: string;
   /** Que tipo de tarefa o auxiliar está fazendo — a cena usa para encenar o trajeto. */
   supportTaskKind?: "venda" | "levarReparo" | "trazerReparo" | "repor" | "cafe";
-  /** Venda que o auxiliar não pode fechar sozinho: espera o aval do jogador. */
+  /** Venda que o auxiliar não podia decidir sozinho: primeiro pedido exibido na UI. */
   pendingDiscount?: DiscountRequest;
+  /** Pedidos independentes, um por auxiliar; pendingDiscount mantém compatibilidade visual. */
+  pendingDiscounts: DiscountRequest[];
+
   missedSales: number;
   missedRepairs: number;
   idleEmployeeTime: number;
@@ -219,16 +222,6 @@ export interface GameState {
  */
 export const GOLES_BEBEDOURO = 8;
 export const DOSES_CAFE = 10;
-
-/**
- * Quanto acima da vitrine o cliente ainda fecha sem negociação. Mora aqui
- * pelo mesmo motivo dos goles: o núcleo decide a venda direta, a ponte do
- * teclado monta o cartão de ágio e o cartão do balcão escolhe o rótulo do
- * botão. Repetida em três lugares, ela já divergiu — 1,15 no núcleo e 1,08
- * nos outros dois — e o mesmo cliente virava venda direta para o auxiliar e
- * pedido de ágio para o jogador.
- */
-export const CUSTOMER_PRICE_TOLERANCE = 1.15;
 
 export interface Opportunity {
   id: string;
