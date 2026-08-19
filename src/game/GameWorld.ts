@@ -113,6 +113,13 @@ const LIMITE_EQUIPE: Record<EmployeeRole, number> = {
 };
 /** Preço de vitrine não passa disso vezes o valor de mercado do produto. */
 const PRICE_CEILING_FACTOR = 2.5;
+/**
+ * Faixa de aceitação acima do preço de vitrine. O limite anterior de 8% fazia
+ * a venda direta depender de um intervalo estreito demais: no dia 1 o jogador
+ * precisava negociar quase todo cliente. 15% mantém o preço relevante, mas
+ * transforma o atendimento manual em estratégia, não em loteria.
+ */
+const CUSTOMER_PRICE_TOLERANCE = 1.15;
 /** Quanto cada ajuda do jogador tira do prazo do conserto. */
 const REPAIR_HELP_SECONDS = 7;
 /** Intervalo mínimo entre duas ajudas, para E repetido não zerar o reparo. */
@@ -838,7 +845,7 @@ export class GameWorld {
     const vendaDireta = Array.from(this.state.customers.values()).find((customer) => {
       if (!atendivel(customer) || !customer.needsProduct) return false;
       const product = this.state.products.get(customer.needsProduct);
-       return !!product && product.stock > 0 && customer.budget >= product.sellingPrice && customer.budget <= product.sellingPrice * 1.08;
+       return !!product && product.stock > 0 && customer.budget >= product.sellingPrice && customer.budget <= product.sellingPrice * CUSTOMER_PRICE_TOLERANCE;
     });
     if (vendaDireta?.needsProduct) {
       const product = this.state.products.get(vendaDireta.needsProduct)!;
@@ -857,7 +864,7 @@ export class GameWorld {
       const precisaAval = Array.from(this.state.customers.values()).find((customer) => {
         if (!atendivel(customer) || !customer.needsProduct) return false;
         const product = this.state.products.get(customer.needsProduct);
-        return !!product && product.stock > 0 && (customer.budget < product.sellingPrice || customer.budget > product.sellingPrice * 1.08);
+        return !!product && product.stock > 0 && (customer.budget < product.sellingPrice || customer.budget > product.sellingPrice * CUSTOMER_PRICE_TOLERANCE);
       });
       if (precisaAval?.needsProduct) {
         const product = this.state.products.get(precisaAval.needsProduct)!;
@@ -1010,7 +1017,10 @@ export class GameWorld {
     const sales = this.state.sales.length - this.shiftStartSales;
     const repairs = this.state.repairs.filter((repair) => repair.status === "completed").length - this.shiftStartRepairs;
     const customersLost = this.state.missedSales + this.state.missedRepairs - this.shiftStartMissed;
-    const goalReached = revenue >= this.state.dailyGoal;
+    // A meta é de lucro líquido, não de faturamento bruto: do contrário o
+    // jogador podia bater a meta vendendo muito e ainda terminar o dia no
+    // prejuízo após compras e salários.
+    const goalReached = profit >= this.state.dailyGoal;
     if (goalReached) this.state.reputation = Math.min(100, this.state.reputation + 5);
     this.shiftReport = {
       day: this.state.day, goal: this.state.dailyGoal, revenue, profit, sales, repairs, customersLost, folha,

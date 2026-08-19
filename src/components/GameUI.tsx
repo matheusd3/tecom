@@ -4,7 +4,7 @@
 // Regra da divisão de trabalho: nenhuma regra econômica mora aqui. Este arquivo
 // só lê o estado publicado pelo GameWorld e chama os métodos dele.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PlayerStation } from "@/game/scene";
 import type {
   ActionResult,
@@ -215,6 +215,65 @@ function nomeParaContratacao(indice: number): string {
   return volta > 0 ? `${base} ${volta + 1}` : base;
 }
 
+function JoystickMovimento({ onMove }: { onMove: (x: number, z: number) => void }) {
+  const areaRef = useRef<HTMLDivElement>(null);
+  const ponteiroRef = useRef<number | null>(null);
+  const [eixo, setEixo] = useState({ x: 0, z: 0 });
+
+  const atualizar = (clientX: number, clientY: number) => {
+    const area = areaRef.current;
+    if (!area) return;
+    const rect = area.getBoundingClientRect();
+    const raio = Math.min(rect.width, rect.height) * 0.34;
+    const centroX = rect.left + rect.width / 2;
+    const centroY = rect.top + rect.height / 2;
+    let x = (clientX - centroX) / raio;
+    let z = (centroY - clientY) / raio;
+    const magnitude = Math.hypot(x, z);
+    if (magnitude > 1) { x /= magnitude; z /= magnitude; }
+    const zonaMorta = 0.12;
+    if (Math.hypot(x, z) < zonaMorta) { x = 0; z = 0; }
+    setEixo({ x, z });
+    onMove(x, z);
+  };
+
+  const encerrar = () => {
+    ponteiroRef.current = null;
+    setEixo({ x: 0, z: 0 });
+    onMove(0, 0);
+  };
+
+  return (
+    <div
+      ref={areaRef}
+      className="joystick"
+      aria-label="Joystick virtual para movimentar o atendente"
+      onPointerDown={(event) => {
+        event.preventDefault();
+        ponteiroRef.current = event.pointerId;
+        areaRef.current?.setPointerCapture(event.pointerId);
+        atualizar(event.clientX, event.clientY);
+      }}
+      onPointerMove={(event) => {
+        if (ponteiroRef.current === event.pointerId) atualizar(event.clientX, event.clientY);
+      }}
+      onPointerUp={encerrar}
+      onPointerCancel={encerrar}
+      onPointerLeave={(event) => {
+        if (ponteiroRef.current === event.pointerId && !areaRef.current?.hasPointerCapture(event.pointerId)) encerrar();
+      }}
+    >
+      <span className="joystick__anel" aria-hidden="true" />
+      <span
+        className="joystick__pino"
+        aria-hidden="true"
+        style={{ transform: `translate(calc(-50% + ${eixo.x * 28}px), calc(-50% - ${eixo.z * 28}px))` }}
+      />
+      <span className="joystick__rotulo">MOVER</span>
+    </div>
+  );
+}
+
 const moeda = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
@@ -393,19 +452,10 @@ export function GameUI(props: GameUIProps) {
     preferido && preferido.status === "waiting" ? preferido : aguardando[0];
   const idSelecionado = selecionado?.id;
 
-  // Filtro de exibição (não é contabilidade): o turno começou em
-  // time - (duracao - restante), então dá para mostrar o que já entrou hoje.
-  // A meta do núcleo é comparada com a RECEITA do turno, então a barra usa
-  // receita — mostrar lucro aqui contradiria o relatório de fechamento.
-  const inicioDoTurno = gameState.time - (duracao - restante);
-  const receitaDoTurno =
-    gameState.sales
-      .filter((v) => v.timestamp >= inicioDoTurno)
-      .reduce((s, v) => s + v.price, 0) +
-    gameState.repairs
-      .filter((r) => r.completed && r.startTime >= inicioDoTurno)
-      .reduce((s, r) => s + r.price, 0);
-  const progressoMeta = meta > 0 ? Math.min(100, (receitaDoTurno / meta) * 100) : 0;
+  // A meta é de lucro líquido. O núcleo já desconta compras, salários e custos
+  // no valor de shiftProfit, então o HUD não precisa reconstruir a contabilidade.
+  const lucroDoTurno = numero(gameState.shiftProfit);
+  const progressoMeta = meta > 0 ? Math.min(100, (lucroDoTurno / meta) * 100) : 0;
 
   const selecionar = (id: string) => {
     setSelecaoLocal(id);
@@ -543,9 +593,9 @@ export function GameUI(props: GameUIProps) {
             </span>
           </div>
           <div className="resumo-item">
-            <span className="resumo-item__rotulo">Meta do dia</span>
+            <span className="resumo-item__rotulo">Lucro do dia</span>
             <span className="resumo-item__valor valor--ciano">
-              {formatarMoeda(receitaDoTurno)}
+              {formatarMoeda(lucroDoTurno)}
               <small className="resumo-item__alvo"> / {formatarMoeda(meta)}</small>
             </span>
           </div>
@@ -612,7 +662,7 @@ export function GameUI(props: GameUIProps) {
         </div>
         <span className="faixa-meta__texto">
           {meta > 0
-            ? `Receita do turno ${formatarMoeda(receitaDoTurno)} de ${formatarMoeda(meta)}`
+            ? `Lucro do turno ${formatarMoeda(lucroDoTurno)} de ${formatarMoeda(meta)}`
             : "Meta do dia ainda não definida pelo núcleo"}
         </span>
       </div>
@@ -653,16 +703,7 @@ export function GameUI(props: GameUIProps) {
       {/* Controles exibidos apenas em telas de toque. O teclado continua
           funcionando normalmente em computadores. */}
       <div className="controles-toque" aria-label="Controles do jogo">
-        <div className="direcional" aria-label="Mover personagem">
-          <button className="direcional__botao direcional__cima" aria-label="Andar para frente"
-            onPointerDown={() => props.onMobileMove(0, 1)} onPointerUp={() => props.onMobileMove(0, 0)} onPointerLeave={() => props.onMobileMove(0, 0)} onPointerCancel={() => props.onMobileMove(0, 0)}>▲</button>
-          <button className="direcional__botao direcional__esquerda" aria-label="Andar para a esquerda"
-            onPointerDown={() => props.onMobileMove(-1, 0)} onPointerUp={() => props.onMobileMove(0, 0)} onPointerLeave={() => props.onMobileMove(0, 0)} onPointerCancel={() => props.onMobileMove(0, 0)}>◀</button>
-          <button className="direcional__botao direcional__direita" aria-label="Andar para a direita"
-            onPointerDown={() => props.onMobileMove(1, 0)} onPointerUp={() => props.onMobileMove(0, 0)} onPointerLeave={() => props.onMobileMove(0, 0)} onPointerCancel={() => props.onMobileMove(0, 0)}>▶</button>
-          <button className="direcional__botao direcional__baixo" aria-label="Andar para trás"
-            onPointerDown={() => props.onMobileMove(0, -1)} onPointerUp={() => props.onMobileMove(0, 0)} onPointerLeave={() => props.onMobileMove(0, 0)} onPointerCancel={() => props.onMobileMove(0, 0)}>▼</button>
-        </div>
+        <JoystickMovimento onMove={props.onMobileMove} />
         <button className="botao-interagir" onClick={props.onMobileInteract}>INTERAGIR</button>
       </div>
 
@@ -679,6 +720,26 @@ export function GameUI(props: GameUIProps) {
               painel à esquerda. Quando abrir a loja, os clientes chegam sem
               esperar: cada um é uma decisão sua.
             </p>
+            <div className="guia-inicial" aria-label="Passos recomendados para começar">
+              <div className="guia-inicial__cabecalho">
+                <span className="guia-inicial__pulso" aria-hidden="true" />
+                <span>Rota recomendada</span>
+              </div>
+              <div className="guia-inicial__passos">
+                <div className="guia-inicial__passo">
+                  <strong>01</strong>
+                  <span><b>Estoque</b> compre itens de alta demanda</span>
+                </div>
+                <div className="guia-inicial__passo">
+                  <strong>02</strong>
+                  <span><b>Preço</b> comece perto da margem sugerida</span>
+                </div>
+                <div className="guia-inicial__passo">
+                  <strong>03</strong>
+                  <span><b>Turno</b> abra a loja e atenda com E</span>
+                </div>
+              </div>
+            </div>
             <div className="palco__kpis">
               <div className="kpi">
                 <span className="kpi__rotulo">Meta de lucro</span>

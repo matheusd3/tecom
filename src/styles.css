@@ -1035,6 +1035,66 @@ button {
   color: var(--texto-fraco);
 }
 
+.guia-inicial {
+  margin: -2px 0 13px;
+  padding: 9px 10px 10px;
+  border: 1px solid rgba(0, 229, 255, 0.2);
+  border-radius: 9px;
+  background: linear-gradient(135deg, rgba(0, 229, 255, 0.08), rgba(255, 46, 151, 0.05));
+}
+
+.guia-inicial__cabecalho {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  color: var(--ciano);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+
+.guia-inicial__pulso {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--verde);
+  box-shadow: 0 0 10px var(--verde);
+  animation: guia-pulso 1.7s ease-in-out infinite;
+}
+
+.guia-inicial__passos {
+  display: grid;
+  gap: 6px;
+}
+
+.guia-inicial__passo {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  align-items: center;
+  gap: 7px;
+  color: var(--texto-fraco);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.guia-inicial__passo strong {
+  color: var(--magenta);
+  font-family: Orbitron, monospace;
+  font-size: 10px;
+}
+
+.guia-inicial__passo b {
+  color: var(--texto);
+  font-weight: 700;
+}
+
+@keyframes guia-pulso {
+  0%, 100% { opacity: 0.55; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
 .palco__aviso {
   margin: 10px 0 0;
   font-size: 11px;
@@ -1698,55 +1758,83 @@ button {
     z-index: 3;
   }
 
-  .direcional,
+  .joystick,
   .botao-interagir {
     pointer-events: auto;
-  }
-
-  .direcional {
-    position: relative;
-    width: 132px;
-    height: 132px;
-  }
-
-  .direcional__botao,
-  .botao-interagir {
     -webkit-tap-highlight-color: transparent;
     touch-action: none;
     user-select: none;
-    border: 1px solid rgba(0, 229, 255, 0.6);
-    background: rgba(5, 15, 21, 0.84);
-    color: var(--ciano);
-    box-shadow: 0 0 18px rgba(0, 229, 255, 0.18);
-    font-family: Orbitron, monospace;
-    font-weight: 700;
   }
 
-  .direcional__botao {
+  .joystick {
+    position: relative;
+    width: 142px;
+    height: 142px;
+    border: 1px solid rgba(0, 229, 255, 0.28);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(0, 229, 255, 0.12), rgba(5, 15, 21, 0.72) 62%, rgba(5, 15, 21, 0.9));
+    box-shadow: inset 0 0 24px rgba(0, 229, 255, 0.12), 0 0 20px rgba(0, 229, 255, 0.16);
+  }
+
+  .joystick::before,
+  .joystick::after {
+    content: "";
     position: absolute;
-    width: 43px;
-    height: 43px;
-    border-radius: 12px;
-    font-size: 17px;
+    background: rgba(0, 229, 255, 0.15);
   }
 
-  .direcional__cima { top: 0; left: 44px; }
-  .direcional__esquerda { top: 44px; left: 0; }
-  .direcional__direita { top: 44px; right: 0; }
-  .direcional__baixo { bottom: 0; left: 44px; }
+  .joystick::before { left: 15%; right: 15%; top: 50%; height: 1px; }
+  .joystick::after { top: 15%; bottom: 15%; left: 50%; width: 1px; }
 
-  .direcional__botao:active,
-  .botao-interagir:active {
-    background: var(--ciano);
-    color: #04141a;
+  .joystick__anel {
+    position: absolute;
+    inset: 24px;
+    border: 1px dashed rgba(0, 229, 255, 0.35);
+    border-radius: 50%;
+  }
+
+  .joystick__pino {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 50px;
+    height: 50px;
+    border: 2px solid var(--ciano);
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #b5fbff, var(--ciano) 28%, #08778a 72%);
+    box-shadow: 0 0 18px rgba(0, 229, 255, 0.65);
+    transition: transform 80ms ease-out;
+  }
+
+  .joystick__rotulo {
+    position: absolute;
+    left: 50%;
+    bottom: 8px;
+    transform: translateX(-50%);
+    color: rgba(218, 248, 255, 0.7);
+    font-family: Orbitron, monospace;
+    font-size: 8px;
+    letter-spacing: 1px;
   }
 
   .botao-interagir {
-    min-height: 57px;
-    padding: 0 16px;
+    min-height: 66px;
+    min-width: 66px;
+    padding: 0 12px;
+    border: 1px solid var(--magenta);
     border-radius: 50%;
-    font-size: 11px;
+    background: rgba(42, 8, 30, 0.86);
+    color: #ffd2ea;
+    box-shadow: 0 0 20px rgba(255, 46, 151, 0.3);
+    font-family: Orbitron, monospace;
+    font-size: 10px;
+    font-weight: 700;
     letter-spacing: 0.5px;
+  }
+
+  .botao-interagir:active {
+    background: var(--magenta);
+    color: #180512;
   }
 }
 
