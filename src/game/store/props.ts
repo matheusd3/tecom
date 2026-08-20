@@ -630,7 +630,7 @@ function paredes(scene: Scene, mats: Materiais): void {
   letreiro.material = materialPlaca(
     scene,
     "letreiroLoja",
-    "TECH STORE",
+    "SEU MICRO",
     "#0d1a22",
     PALETA.ciano,
     "informática · assistência"

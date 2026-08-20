@@ -165,8 +165,7 @@ function AnelDeConserto({ fracao, segundos }: { fracao: number; segundos: number
   );
 }
 
-/** Abaixo disso o painel lateral vira gaveta por cima da loja (ver styles.css). */
-
+/** Espelha a consulta do CSS: ver CONSULTA_GAVETA em types.ts. */
 function emModoGaveta(): boolean {
   return typeof window !== "undefined" && window.matchMedia(CONSULTA_GAVETA).matches;
 }
@@ -572,7 +571,7 @@ export function GameUI(props: GameUIProps) {
         <div className="marca">
           <div className="marca__selo">$</div>
           <div>
-            <h1 className="marca__titulo">TECH STORE TYCOON</h1>
+            <h1 className="marca__titulo">SEU MICRO</h1>
             <p className="marca__relogio">
               {/* No fechamento o núcleo já incrementou o dia, então quem manda
                   no rótulo é o dia do relatório. */}

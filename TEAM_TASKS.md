@@ -1,4 +1,4 @@
-# Divisão de trabalho — Tech Store Tycoon
+# Divisão de trabalho — Seu Micro
 
 Este arquivo é o ponto de coordenação entre Codex e Claude. Antes de editar, cada pessoa deve ler este arquivo e `CLAUDE.md`.
 

@@ -1,4 +1,4 @@
-# Contexto do projeto — Tech Store Tycoon
+# Contexto do projeto — Seu Micro
 
 ## Objetivo
 
@@ -6,7 +6,7 @@ Criar um jogo web de gerenciamento de uma loja de informática. O jogador admini
 
 ## Direção visual
 
-- Nome de trabalho: **Tech Store Tycoon**
+- Nome: **Seu Micro** (na Steam: "Seu Micro — Brazilian PC Shop Sim")
 - Estilo: **Neon Commerce Tycoon**
 - Dashboard retro-futurista inspirado nos anos 80/90.
 - Fundo escuro (`#0F1419`) com destaques em ciano, magenta e verde-lima.
