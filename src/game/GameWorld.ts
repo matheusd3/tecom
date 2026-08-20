@@ -601,9 +601,15 @@ export class GameWorld {
     if (this.pausado()) return TURNO_PAUSADO();
         const pedido = this.state.pendingDiscounts[0];
     if (!pedido) return { ok: false, message: "Não há desconto esperando aprovação." };
-    const helper = Array.from(this.state.employees.values()).find(
+    const quemPediu = Array.from(this.state.employees.values()).find(
       (employee) => employee.role === "seller" && employee.id !== "seller-1" && employee.name === pedido.askedBy
     );
+    // Quem pediu fecha a venda, SE ainda estiver livre. Exigir exatamente ele
+    // travava a aprovação: com o despacho a cada 0,75 s o auxiliar quase sempre
+    // já saiu para outra tarefa, e o jogador apertava "Aprovar" recebendo
+    // "todos os vendedores estão ocupados" — com o vendedor da casa parado ao
+    // lado. Ocupado ele, cai para quem estiver livre.
+    const helper = quemPediu && !quemPediu.isBusy ? quemPediu : undefined;
     const resultado = this.sellToCustomer(pedido.customerId, pedido.customerPrice, helper?.id);
     if (resultado.ok) {
       this.state.pendingDiscounts.shift();
