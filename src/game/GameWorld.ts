@@ -52,6 +52,20 @@ const CUSTOMER_SPAWN_MIN_FINAL = 2;
 const CUSTOMER_SPAWN_MAX_FINAL = 5;
 /** Dia em que a chegada atinge o ritmo máximo. */
 const DIA_DEMANDA_CHEIA = 8;
+/**
+ * Quanto o primeiro cliente do turno demora. A loja abria e ficavam 10 s de
+ * nada — 8% do turno olhando o salão vazio logo depois de apertar "Abrir a
+ * loja". Agora ela abre com alguém quase na porta.
+ */
+const PRIMEIRA_CHEGADA_MIN = 1.5;
+const PRIMEIRA_CHEGADA_MAX = 3.5;
+/**
+ * Faltando menos que isto, ninguém mais entra. Um cliente que chega no fim
+ * não tem como ser atendido — são 2,5 s só para andar até o balcão, mais a
+ * ida à prateleira — e no fechamento ele virava perda E tirava reputação.
+ * Perder cliente tem de ser culpa do jogador, não do relógio.
+ */
+const JANELA_MINIMA_DE_ATENDIMENTO = 12;
 const CAPACIDADE_PRATELEIRA = 10;
 /**
  * Catálogo em três camadas. O `tier` é liberado pelo dia (ver `tierLiberado`) e
@@ -281,6 +295,10 @@ export class GameWorld {
     this.state.phase = "active";
     this.state.isPaused = false;
     this.state.shiftTimeRemaining = SHIFT_DURATION;
+    // O relógio de chegada zera a cada turno e a primeira vem logo: sem isto
+    // o intervalo normal (7 a 15 s) valia também para o primeiro cliente.
+    this.customerSpawnTimer = 0;
+    this.nextCustomerSpawn = this.randomBetween(PRIMEIRA_CHEGADA_MIN, PRIMEIRA_CHEGADA_MAX);
     this.state.selectedCustomerId = undefined;
     this.shiftStartRevenue = this.state.totalRevenue;
     this.shiftStartExpenses = this.state.totalExpenses;
@@ -727,6 +745,8 @@ export class GameWorld {
   }
 
   private generateCustomers(elapsed: number): void {
+    // Ninguém entra sem tempo de ser atendido: ver JANELA_MINIMA_DE_ATENDIMENTO.
+    if (this.state.shiftTimeRemaining < JANELA_MINIMA_DE_ATENDIMENTO) return;
     if (Array.from(this.state.customers.values()).filter((customer) => customer.status === "waiting").length >= this.tetoDaFila()) return;
     this.customerSpawnTimer += elapsed;
     if (this.customerSpawnTimer < this.nextCustomerSpawn) return;
