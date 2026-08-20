@@ -24,6 +24,7 @@ import type {
   TutorialPassoId,
   Upgrade,
 } from "@/game/types";
+import { DIAS_DO_ARCO, REPUTACAO_DO_OBJETIVO } from "@/game/types";
 
 /** O que o núcleo já expõe. Enquanto o Codex termina, a interface se adapta. */
 export interface Capacidades {
@@ -67,6 +68,8 @@ interface GameUIProps {
   /** Fala do Seu Zé para a situação de agora. */
   passoTutorial: { id: TutorialPassoId; fala: string[] } | null;
   onEntendiPasso: (id: TutorialPassoId) => void;
+  onAceitarOferta: () => void;
+  onRecusarOferta: () => void;
   onPularTutorial: () => void;
   resumoSave: ResumoDoSave | null;
   onContinuar: () => void;
@@ -283,6 +286,110 @@ function JoystickMovimento({ onMove }: { onMove: (x: number, z: number) => void 
         style={{ transform: `translate(calc(-50% + ${eixo.x * 28}px), calc(-50% - ${eixo.z * 28}px))` }}
       />
       <span className="joystick__rotulo">MOVER</span>
+    </div>
+  );
+}
+
+/** O filho do Seu Zé à porta. Aparece com dois atrasos e pergunta uma vez só. */
+function OfertaDoFilho(props: { valor: number; onAceitar: () => void; onRecusar: () => void }) {
+  const [confirmando, setConfirmando] = useState(false);
+  return (
+    <aside className="oferta-filho">
+      <div className="oferta-filho__quem">
+        <span className="oferta-filho__avatar" aria-hidden="true">?</span>
+        <div>
+          <strong>O filho do Seu Zé</strong>
+          <span>veio conversar sobre a loja</span>
+        </div>
+      </div>
+      <p>
+        "Meu pai não devia ter deixado isso com você. Eu assumo a dívida e te dou{" "}
+        {formatarMoeda(props.valor)} pelo que sobrou. Pensa bem: mais um mês desses e
+        você não vai ter nem isso."
+      </p>
+      <div className="oferta-filho__acoes">
+        <button className="btn btn--ativo" onClick={props.onRecusar}>
+          A loja é minha
+        </button>
+        <button
+          className={`btn ${confirmando ? "btn--magenta" : ""}`}
+          onClick={() => (confirmando ? props.onAceitar() : setConfirmando(true))}
+          onBlur={() => setConfirmando(false)}
+        >
+          {confirmando ? "Entregar as chaves de vez?" : "Aceitar a oferta"}
+        </button>
+      </div>
+      {confirmando && <p className="oferta-filho__aviso">Aceitar encerra a partida.</p>}
+    </aside>
+  );
+}
+
+/** Fim da temporada. Cobre a tela porque acabou mesmo — não dá para continuar. */
+function FimDaTemporada(props: {
+  fim: NonNullable<GameState["arco"]["fim"]>;
+  estado: GameState;
+  onRecomecar: () => void;
+}) {
+  const { estado } = props;
+  const textos: Record<typeof props.fim, { titulo: string; corpo: string; tom: string }> = {
+    vitoria: {
+      titulo: "O letreiro continua na parede",
+      corpo:
+        "Trinta dias, a dívida quitada e a loja valendo mais do que quando o Seu Zé saiu. Era exatamente o que ele pediu no dia em que foi embora.",
+      tom: "vitoria",
+    },
+    fimSemObjetivo: {
+      titulo: "A loja sobreviveu",
+      corpo:
+        "Trinta dias e as portas continuam abertas — mas não é isso que o Seu Zé pediu. Ficou dívida no caminho, ou a freguesia não voltou como ele deixou.",
+      tom: "neutro",
+    },
+    derrotaDivida: {
+      titulo: "A dívida levou a loja",
+      corpo:
+        "Três parcelas vencidas sem caixa para pagar. Não tem conversa nem prazo: a loja mudou de dono, e o letreiro vai sair da parede.",
+      tom: "derrota",
+    },
+    derrotaDesistencia: {
+      titulo: "Você entregou as chaves",
+      corpo:
+        "O filho do Seu Zé levou a loja pelo que ofereceu. Ele nunca quis o negócio — só não queria que fosse de mais ninguém.",
+      tom: "derrota",
+    },
+  };
+  const t = textos[props.fim];
+  const quitou = estado.arco.divida.saldo <= 0;
+
+  return (
+    <div className="fim-temporada" role="dialog" aria-modal="true">
+      <div className={`fim-temporada__card fim-temporada__card--${t.tom}`}>
+        <p className="palco__etiqueta">Fim da temporada</p>
+        <h2 className="palco__titulo">{t.titulo}</h2>
+        <p className="palco__texto">{t.corpo}</p>
+        <div className="palco__kpis">
+          <div className="kpi">
+            <span className="kpi__rotulo">Caixa final</span>
+            <strong className="kpi__valor valor--positivo">{formatarMoeda(estado.cash)}</strong>
+          </div>
+          <div className="kpi">
+            <span className="kpi__rotulo">Dívida</span>
+            <strong className={`kpi__valor ${quitou ? "valor--positivo" : "valor--negativo"}`}>
+              {quitou ? "quitada" : formatarMoeda(estado.arco.divida.saldo)}
+            </strong>
+          </div>
+          <div className="kpi">
+            <span className="kpi__rotulo">Reputação</span>
+            <strong
+              className={`kpi__valor ${estado.reputation >= REPUTACAO_DO_OBJETIVO ? "valor--positivo" : "valor--alerta"}`}
+            >
+              {Math.round(estado.reputation)}/{REPUTACAO_DO_OBJETIVO}
+            </strong>
+          </div>
+        </div>
+        <button className="btn btn--gigante" onClick={props.onRecomecar}>
+          Começar uma loja nova
+        </button>
+      </div>
     </div>
   );
 }
@@ -694,6 +801,23 @@ export function GameUI(props: GameUIProps) {
           </div>
         </div>
 
+        {gameState.arco && !gameState.arco.fim && (
+          <div className="arco" title="A temporada do Seu Zé">
+            <span className="arco__dia">
+              Dia <strong>{Math.min(fase === "summary" ? (shiftReport?.day ?? dia) : dia, DIAS_DO_ARCO)}</strong> de {DIAS_DO_ARCO}
+            </span>
+            <span className="arco__barra" aria-hidden="true">
+              <i style={{ width: `${Math.min(100, ((fase === "summary" ? (shiftReport?.day ?? dia) : dia) / DIAS_DO_ARCO) * 100)}%` }} />
+            </span>
+            <span className={`arco__divida ${gameState.arco.divida.atrasos > 0 ? "arco__divida--atraso" : ""}`}>
+              {gameState.arco.divida.saldo > 0
+                ? `Dívida ${formatarMoeda(gameState.arco.divida.saldo)}`
+                : "Dívida quitada"}
+              {gameState.arco.divida.atrasos > 0 && ` · ${gameState.arco.divida.atrasos} atraso(s)`}
+            </span>
+          </div>
+        )}
+
         {emTurno && (
           <div className="cronometro">
             <span className="cronometro__rotulo">
@@ -847,7 +971,19 @@ export function GameUI(props: GameUIProps) {
         )}
       </div>
 
-      {props.passoTutorial && (
+      {gameState.arco?.ofertaDoFilho && fase === "summary" && !gameState.arco.fim && (
+        <OfertaDoFilho
+          valor={gameState.arco.ofertaDoFilho.valor}
+          onAceitar={props.onAceitarOferta}
+          onRecusar={props.onRecusarOferta}
+        />
+      )}
+
+      {gameState.arco?.fim && (
+        <FimDaTemporada fim={gameState.arco.fim} estado={gameState} onRecomecar={props.onReset} />
+      )}
+
+      {props.passoTutorial && !gameState.arco?.fim && (
         <FalaDoZe
           passo={props.passoTutorial}
           onEntendi={props.onEntendiPasso}
@@ -1676,6 +1812,20 @@ function ModalFechamento({
                   {relatorio.folha > 0 ? `-${formatarMoeda(relatorio.folha)}` : "sem equipe"}
                 </strong>
               </div>
+              {/* Parcela da dívida do Seu Zé. Mesma regra da folha: dinheiro
+                  que sai tem de aparecer na conta que o jogador lê. */}
+              {relatorio.parcela && (
+                <div className="kpi">
+                  <span className="kpi__rotulo">
+                    {relatorio.parcela.pago ? "Parcela da dívida" : "Parcela vencida"}
+                  </span>
+                  <strong className={`kpi__valor ${relatorio.parcela.pago ? "valor--negativo" : "valor--alerta"}`}>
+                    {relatorio.parcela.pago
+                      ? `-${formatarMoeda(relatorio.parcela.valor)}`
+                      : "sem caixa"}
+                  </strong>
+                </div>
+              )}
               <div className="kpi">
                 <span className="kpi__rotulo">Reputação</span>
                 <strong

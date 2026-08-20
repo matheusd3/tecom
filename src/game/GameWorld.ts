@@ -22,8 +22,24 @@ import {
   InstantaneoJogo,
   EstadoSerializado,
   TutorialPassoId,
+  ShiftReport as RelatorioDoTurno,
 } from "./types";
-import { CUSTOMER_PRICE_TOLERANCE, DIAS_COM_ZE, DOSES_CAFE, GOLES_BEBEDOURO, VERSAO_SAVE } from "./types";
+import {
+  ATRASOS_PARA_OFERTA,
+  ATRASOS_PARA_PERDER,
+  CUSTOMER_PRICE_TOLERANCE,
+  DIAS_COM_ZE,
+  DIAS_DE_AVISO,
+  DIAS_DO_ARCO,
+  DIVIDA_INICIAL,
+  DOSES_CAFE,
+  GOLES_BEBEDOURO,
+  INTERVALO_DA_PARCELA,
+  OFERTA_DO_FILHO,
+  REPUTACAO_DO_OBJETIVO,
+  valorDaParcela,
+  VERSAO_SAVE,
+} from "./types";
 
 /**
  * O que o Seu Zé ensina, e quando.
@@ -51,6 +67,14 @@ function esperandoNoBalcao(estado: GameState, filtro: (c: Customer) => boolean):
 }
 
 const PASSOS_DO_TUTORIAL: PassoDoTutorial[] = [
+  {
+    id: "objetivo",
+    fala: [
+      "Antes de abrir: a loja vem com uma dívida minha, cento e trinta mil. Ela cobra de seis em seis dias e as parcelas crescem — a primeira é pequena, a última não. Deixar vencer duas vezes já é problema; três e você não é mais o dono.",
+      "O que eu te peço é o seguinte. Trinta dias. Quita a dívida e chega no fim com a loja valendo mais do que quando eu saí — reputação setenta pra cima. Faz isso e o letreiro é seu.",
+    ],
+    gatilho: (estado) => estado.phase === "planning" && estado.day === 1,
+  },
   {
     id: "atender",
     fala: ["Chegou freguês, você vai até ele e aperta E. Não deixa ninguém falando sozinho — isso aqui não é loja de shopping."],
@@ -361,6 +385,11 @@ export class GameWorld {
   }
 
   public startShift(): ActionResult {
+    // Temporada encerrada não reabre. Sem isto o jogador via a tela de fim e
+    // continuava jogando por cima dela, o que apaga o fim que acabou de ler.
+    if (this.state.arco.fim) {
+      return { ok: false, message: "A temporada terminou. Comece uma loja nova para jogar de novo." };
+    }
     if (this.state.phase === "active") {
       this.state.isPaused = false;
       return { ok: true, message: "Turno retomado." };
@@ -975,6 +1004,14 @@ export class GameWorld {
       nivelDoBebedouro: GOLES_BEBEDOURO,
       nivelDoCafe: 0,
       tutorial: { passosVistos: [], pulado: false },
+      arco: {
+        divida: {
+          saldo: DIVIDA_INICIAL,
+          parcelasPagas: 0,
+          atrasos: 0,
+          proximaNoDia: INTERVALO_DA_PARCELA,
+        },
+      },
     };
   }
 
@@ -1297,6 +1334,11 @@ export class GameWorld {
     // A folha entra ANTES de fechar os números do dia: ela é despesa do turno
     // que acabou e precisa aparecer no lucro que o jogador vai ler.
     const folha = this.cobrarFolhaDoDia();
+    // A parcela é despesa do turno que acabou, igual à folha, e sai antes de o
+    // jogador ler o lucro. Dívida que só aparece numa tela de fim de jogo não
+    // é pressão: é surpresa.
+    const parcela = this.cobrarParcelaDaDivida();
+    this.avisarParcelaChegando();
     const revenue = this.state.totalRevenue - this.shiftStartRevenue;
     const profit = this.state.shiftProfit - (this.state.totalExpenses - this.shiftStartExpenses);
     const sales = this.state.sales.length - this.shiftStartSales;
@@ -1308,15 +1350,124 @@ export class GameWorld {
     const goalReached = profit >= this.state.dailyGoal;
     if (goalReached) this.state.reputation = Math.min(100, this.state.reputation + 5);
     this.shiftReport = {
-      day: this.state.day, goal: this.state.dailyGoal, revenue, profit, sales, repairs, customersLost, folha,
+      day: this.state.day, goal: this.state.dailyGoal, revenue, profit, sales, repairs, customersLost, folha, parcela,
       reputationChange: this.state.reputation - this.shiftStartReputation,
       goalReached, topOpportunity: this.getOpportunities()[0], highlights: [...this.shiftHighlights],
     };
     this.state.phase = "summary";
     this.state.isPaused = true;
     this.state.day++;
-    this.state.dailyGoal = 900 + (this.state.day - 1) * 180;
+    // A meta parava de fazer sentido: crescia R$ 180 por dia para sempre
+    // enquanto o lucro medido estacionava perto de R$ 2.500 a partir do dia 13.
+    // Do dia 10 em diante ela para de subir e vira degrau, não rampa.
+    this.state.dailyGoal = 900 + Math.min(this.state.day - 1, 9) * 180;
     this.state.upgradesOferecidos = this.sortearOfertas();
+    this.avaliarFimDoArco();
+  }
+
+  /**
+   * Parcela vencida neste fechamento, se houver.
+   *
+   * Sem caixa não há calote silencioso: vira atraso, e atraso é o que traz o
+   * filho do Seu Zé à porta e, na terceira vez, tira a loja.
+   */
+  private cobrarParcelaDaDivida(): RelatorioDoTurno["parcela"] {
+    const divida = this.state.arco.divida;
+    if (divida.saldo <= 0 || this.state.day !== divida.proximaNoDia) return undefined;
+
+    // A parcela é a da vez, não uma fatia igual: elas crescem junto com o
+    // caixa do jogador (ver PARCELAS_DA_DIVIDA).
+    const valor = Math.min(valorDaParcela(divida.parcelasPagas + divida.atrasos + 1), divida.saldo);
+    divida.proximaNoDia += INTERVALO_DA_PARCELA;
+
+    if (this.state.cash >= valor) {
+      this.recordExpense(valor);
+      divida.saldo -= valor;
+      divida.parcelasPagas++;
+      this.addHighlight(
+        divida.saldo > 0
+          ? `Parcela da dívida paga. Faltam ${this.emReais(divida.saldo)}.`
+          : "Última parcela paga: a dívida do Seu Zé está quitada."
+      );
+      return { valor, pago: true };
+    }
+
+    divida.atrasos++;
+    this.addHighlight(
+      `Sem caixa para a parcela de ${this.emReais(valor)}. Atraso ${divida.atrasos} de ${ATRASOS_PARA_PERDER}.`
+    );
+    return { valor, pago: false };
+  }
+
+  /** Aviso com alguns dias de antecedência: derrota sem aviso é bug, não desafio. */
+  private avisarParcelaChegando(): void {
+    const divida = this.state.arco.divida;
+    if (divida.saldo <= 0) return;
+    const faltam = divida.proximaNoDia - this.state.day;
+    if (faltam <= 0 || faltam > DIAS_DE_AVISO) return;
+    this.addHighlight(
+      `Parcela de ${this.emReais(Math.min(valorDaParcela(divida.parcelasPagas + divida.atrasos + 1), divida.saldo))} vence ${faltam === 1 ? "amanhã" : `em ${faltam} dias`}.`
+    );
+  }
+
+  /**
+   * O fim da temporada. Roda depois do `day++`, então `day` já é o dia
+   * seguinte: passar de DIAS_DO_ARCO significa que o último dia acabou.
+   */
+  private avaliarFimDoArco(): void {
+    const arco = this.state.arco;
+    if (arco.fim) return;
+
+    if (arco.divida.atrasos >= ATRASOS_PARA_PERDER) {
+      arco.fim = "derrotaDivida";
+      return;
+    }
+
+    // Dois atrasos e ele aparece. A oferta é uma só por partida: recusar não
+    // pode virar um cartão que volta todo fechamento até o jogador ceder.
+    if (
+      arco.divida.atrasos >= ATRASOS_PARA_OFERTA &&
+      arco.divida.saldo > 0 &&
+      !arco.ofertaDoFilho &&
+      !arco.filhoJaFoiRecusado
+    ) {
+      arco.ofertaDoFilho = { valor: OFERTA_DO_FILHO, noDia: this.state.day };
+    }
+
+    if (this.state.day > DIAS_DO_ARCO) {
+      const quitou = arco.divida.saldo <= 0;
+      const reputacaoOk = this.state.reputation >= REPUTACAO_DO_OBJETIVO;
+      arco.fim = quitou && reputacaoOk ? "vitoria" : "fimSemObjetivo";
+    }
+  }
+
+  private emReais(valor: number): string {
+    return `R$ ${Math.round(valor).toLocaleString("pt-BR")}`;
+  }
+
+  /** Vender a loja para o filho do Seu Zé. É desistir, e o jogo acaba aí. */
+  public aceitarOfertaDoFilho(): ActionResult {
+    const arco = this.state.arco;
+    if (!arco.ofertaDoFilho) return { ok: false, message: "Não há oferta na mesa." };
+    this.recordRevenue(arco.ofertaDoFilho.valor);
+    arco.fim = "derrotaDesistencia";
+    arco.ofertaDoFilho = undefined;
+    return { ok: true, message: "Você entregou a loja." };
+  }
+
+  /** Recusar: mais um mês com a dívida no pescoço, e ele não volta a perguntar. */
+  public recusarOfertaDoFilho(): ActionResult {
+    const arco = this.state.arco;
+    if (!arco.ofertaDoFilho) return { ok: false, message: "Não há oferta na mesa." };
+    arco.ofertaDoFilho = undefined;
+    arco.filhoJaFoiRecusado = true;
+    this.addHighlight("Você recusou a oferta. A dívida continua de pé.");
+    return { ok: true, message: "Oferta recusada. A loja continua sua." };
+  }
+
+  /** Quantos dias faltam para o fim da temporada. */
+  public diasRestantes(): number {
+    return Math.max(0, DIAS_DO_ARCO - this.state.day + 1);
   }
 
   /**

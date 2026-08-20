@@ -144,9 +144,12 @@ Substituir a meta que sobe para sempre por uma temporada com data de fim.
   dobro do conteúdo que existe hoje.
 - **Objetivo declarado no dia 1**, pelo Seu Zé, em dinheiro ou em reputação —
   não em "sobreviva".
-- **Vitória** no dia 30 com o objetivo cumprido — e a vitória tem imagem: o
-  letreiro do Seu Micro continua na parede, que é exatamente o que o Seu Zé
-  pediu ao sair.
+- **Vitória** no dia 30 com o objetivo cumprido — dívida quitada e reputação
+  70 ou mais. E a vitória tem imagem: o letreiro do Seu Micro continua na
+  parede, que é exatamente o que o Seu Zé pediu ao sair.
+- **Fim sem objetivo:** chegou ao dia 30 de pé, mas com dívida em aberto ou a
+  freguesia perdida. A loja é sua e o pedido não foi cumprido — é o final mais
+  comum de uma primeira partida, e é de propósito.
 - **Derrota que morde:** hoje o caixa nunca fica negativo em 40 dias. A causa
   é a **dívida do Seu Zé** (seção 2): parcela cobrada no fechamento, antes do
   lucro. Atrasar dá aviso; acumular traz o filho dele à porta com uma oferta
@@ -155,7 +158,40 @@ Substituir a meta que sobe para sempre por uma temporada com data de fim.
   bug, não desafio — e derrota que é só uma tela de "você faliu" não dói.
 
 A meta diária continua existindo, mas passa a ser o degrau do mês, não uma reta
-infinita: ela precisa parar de subir onde o lucro típico para de subir.
+infinita: ela para de subir no dia 10 (`900 + min(dia-1, 9) × 180` = R$ 2.520),
+que é onde o lucro típico medido estaciona.
+
+### Sintonia medida — 20/08/2026 ✅ FEITO
+
+A dívida é de **R$ 130.000 em cinco parcelas crescentes** (10, 14, 22, 34 e 50
+mil), nos dias 6, 12, 18, 24 e 30. Crescentes por medição, não por gosto: o
+caixa do jogador nos dias de vencimento é 24k, 27k, 96k, 163k e 249k — quase
+parado até o dia 12 e explodindo depois, porque do dia 15 em diante o catálogo
+de melhorias acaba e nada mais consome dinheiro. Parcela fixa contra essa curva
+é sufoco no começo e decoração no fim.
+
+Com as parcelas crescentes, o caixa que sobra depois de cada uma vira 9k, 29k,
+67k, 112k e 145k — aperto de verdade na primeira e pressão até o fim.
+
+Os quatro finais em 6 partidas por faixa, com o jogador headless ignorando uma
+fração dos clientes:
+
+| Descuido | Resultado | Reputação média |
+|---|---|---|
+| 0% | 6 vitórias | 97 |
+| 15% | 6 fins sem objetivo | 36 |
+| 30% | 6 fins sem objetivo | 9 |
+| 40% | 5 sem objetivo, 1 derrota por dívida | 4 |
+| 55% | 5 derrotas por dívida, 1 sem objetivo | 2 |
+| 70% | 6 derrotas por dívida | 0 |
+
+O filho aparece em 2 de 6 partidas aos 40% de descuido e em 6 de 6 aos 55%.
+
+**Ponto de atenção para a próxima sintonia:** a reputação cai muito rápido —
+97 com jogo perfeito, 36 perdendo 15% dos clientes. Na prática o limiar de 70
+exige menos de ~7% de clientes perdidos, o que faz da vitória um objetivo duro.
+É comportamento herdado (`loseCustomer`), não introduzido pelo arco, mas é o
+primeiro número a mexer se a temporada ficar frustrante demais.
 
 ---
 

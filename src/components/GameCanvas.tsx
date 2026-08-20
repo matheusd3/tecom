@@ -797,6 +797,16 @@ export default function GameCanvas() {
     sincronizar();
   }, [sincronizar]);
 
+  const aceitarOferta = useCallback(() => {
+    worldRef.current?.aceitarOfertaDoFilho();
+    sincronizar();
+  }, [sincronizar]);
+
+  const recusarOferta = useCallback(() => {
+    worldRef.current?.recusarOfertaDoFilho();
+    sincronizar();
+  }, [sincronizar]);
+
   const pularTutorial = useCallback(() => {
     worldRef.current?.pularTutorial();
     sincronizar();
@@ -884,6 +894,8 @@ export default function GameCanvas() {
           passoTutorial={instantaneo.passoTutorial}
           onEntendiPasso={entendiOPasso}
           onPularTutorial={pularTutorial}
+          onAceitarOferta={aceitarOferta}
+          onRecusarOferta={recusarOferta}
           resumoSave={resumoSave}
           onContinuar={continuarPartida}
           onRecomecar={recomecarPartida}
