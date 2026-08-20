@@ -141,13 +141,66 @@ export const INICIO_JOGADOR: Ponto = { x: -4, z: -1.6 };
 /** Ponto onde o cliente entra e para onde volta ao sair. */
 export const ENTRADA: Ponto = { x: 7, z: -11 };
 
-/** Fila em frente ao balcão; o índice 0 é quem está sendo atendido. */
+/**
+ * Fila em frente ao balcão; o índice 0 é quem está sendo atendido.
+ *
+ * Eram quatro vagas, e o teto da fila (`GameWorld.tetoDaFila`) passa de quatro
+ * no dia 7 — ou já no dia 5 com o Segundo balcão, a melhoria vendida
+ * justamente como "a fila comporta mais 2 clientes". Do quinto cliente em
+ * diante todos recebiam a MESMA vaga e ficavam um dentro do outro.
+ *
+ * As três primeiras são a coluna colada no balcão e definem a forma da fila;
+ * as demais dobram pela frente da loja em fileiras que recuam. Todas foram
+ * conferidas contra `MOVEIS` com raio de pessoa de 0,85 — a vaga em
+ * (-8,8; -10,6) caía dentro da `plantaEsquerda` e virou (-8,4; -10,6).
+ */
 export const FILA: Ponto[] = [
+  // Cabeça da fila: a coluna que encosta no balcão.
   { x: -4, z: -6.5 },
   { x: -4, z: -8.7 },
   { x: -4, z: -10.6 },
+  // Primeira fileira, rente à parede da frente, para os dois lados.
   { x: -1.6, z: -10.6 },
+  { x: 0.8, z: -10.6 },
+  { x: 3.2, z: -10.6 },
+  { x: -6.4, z: -10.6 },
+  { x: -8.4, z: -10.6 },
+  // Segunda fileira.
+  { x: -1.6, z: -8.4 },
+  { x: 0.8, z: -8.4 },
+  { x: 3.2, z: -8.4 },
+  { x: -6.4, z: -8.4 },
+  { x: -8.8, z: -8.4 },
+  // Terceira fileira, já perto do balcão.
+  { x: -1.6, z: -6.3 },
+  { x: 0.8, z: -6.3 },
+  { x: 3.2, z: -6.3 },
+  { x: -6.4, z: -6.3 },
+  { x: -8.8, z: -6.3 },
 ];
+
+/**
+ * Vaga da fila por posição, sem nunca repetir ponto.
+ *
+ * O acesso era `FILA[Math.min(i, FILA.length - 1)]`, e o `Math.min` é o bug:
+ * ele não "limita", ele empilha — todo excedente ganha a última vaga.
+ *
+ * As 18 vagas desenhadas cobrem o teto da fila até o dia 46 (dia 40 com o
+ * Segundo balcão), bem além dos 30 dias do arco. O transbordo abaixo é rede de
+ * segurança, não desenho: `tetoDaFila` cresce sem limite e nenhuma lista
+ * desenhada basta sozinha para sempre.
+ */
+export function vagaDaFila(indice: number): Ponto {
+  const vaga = FILA[indice];
+  if (vaga) return vaga;
+  const extra = indice - FILA.length;
+  const colunas = 8;
+  const volta = Math.floor(extra / colunas);
+  return {
+    x: -8.4 + (extra % colunas) * 2.4 + volta * 0.35,
+    z: -11.15 + volta * 0.18,
+  };
+}
 
 /**
  * Onde o cliente espera depois de entregar o aparelho. Fica no cantinho de
@@ -155,10 +208,26 @@ export const FILA: Ponto[] = [
  * leva e busca o aparelho é o atendente.
  */
 export const ESPERA_REPARO: Ponto[] = [
+  // As três originais: sentar no pufe e encostar no café é o desenho do canto.
   { x: 5.2, z: 1.5 },
   { x: 5.2, z: 3.2 },
   { x: 7.6, z: 3.6 },
+  // Vagas novas, pelo mesmo motivo da fila: eram três, e o quarto aparelho em
+  // espera colocava o dono dentro de quem já estava lá.
+  { x: 5.2, z: 5.2 },
+  { x: 7.6, z: 5.6 },
+  { x: 9.8, z: 5.6 },
+  { x: 1.4, z: 4.0 },
+  { x: 1.4, z: 6.0 },
 ];
+
+/** Mesma regra da fila: quem passa das vagas desenhadas ganha ponto só dele. */
+export function vagaDeEspera(indice: number): Ponto {
+  const vaga = ESPERA_REPARO[indice];
+  if (vaga) return vaga;
+  const extra = indice - ESPERA_REPARO.length;
+  return { x: 1.4 + (extra % 5) * 2.2, z: 7.8 + Math.floor(extra / 5) * 0.4 };
+}
 
 // ---------------------------------------------------------------- consultas
 

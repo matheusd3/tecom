@@ -7,8 +7,8 @@
 import type { Customer, GameState } from "../types";
 import {
   ENTRADA,
-  ESPERA_REPARO,
-  FILA,
+  vagaDaFila,
+  vagaDeEspera,
   type Ponto,
 } from "./layout";
 import {
@@ -86,12 +86,15 @@ export function criarMultidao(fabrica: FabricaDePessoas): Multidao {
         (c) => c.status === "repairing" || c.status === "beingServed"
       );
 
+      // Uma vaga por pessoa. O `Math.min(i, ...)` que estava aqui não limitava
+      // a fila: ele mandava todo mundo além da última vaga PARA a última vaga,
+      // e a partir do quinto cliente os bonecos ficavam um dentro do outro.
       const destinos = new Map<string, Ponto>();
       ordemFila.forEach((c, i) => {
-        destinos.set(c.id, FILA[Math.min(i, FILA.length - 1)]);
+        destinos.set(c.id, vagaDaFila(i));
       });
       esperando.forEach((c, i) => {
-        destinos.set(c.id, ESPERA_REPARO[Math.min(i, ESPERA_REPARO.length - 1)]);
+        destinos.set(c.id, vagaDeEspera(i));
       });
 
       for (const cliente of emCena) {
