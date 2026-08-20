@@ -76,6 +76,16 @@ export interface GameHandle {
   putDownItem(filtro: Partial<ItemCarregado>): boolean;
   /** Esvazia os braços. */
   putDownProduct(): void;
+  /**
+   * Realinha a cena com um estado que veio de fora (save carregado).
+   *
+   * A cena é espelho: multidão, equipe, prateleiras e bebedouro se redesenham
+   * sozinhos no quadro seguinte. O que NÃO é espelho são os contadores de
+   * popup — eles guardam "quantas vendas eu já anunciei". Carregar um save do
+   * dia 12 faria `sales.length` saltar de 0 para dezenas de uma vez e a loja
+   * cuspiria um "+R$" fantasma na cara do jogador.
+   */
+  ressincronizar(): void;
   setMobileMovement(x: number, z: number): void;
   dispose(): void;
 }
@@ -271,6 +281,17 @@ export async function createGameScene(
       // existe na loja.
       loja.atualizarCafe(estado.upgrades.includes("cafeDaEspera") ? estado.nivelDoCafe : -1);
       loja.animar(dt);
+    },
+
+    ressincronizar() {
+      const estado = world.getState();
+      vendasVistas = estado.sales.length;
+      reparosVistos = estado.repairs.filter((reparo) => reparo.status === "completed").length;
+      // Mesma dupla do putDownProduct: zerar a lista sem redesenhar deixaria
+      // o produto do turno anterior colado na mão do boneco.
+      carregados = [];
+      desenharPilha();
+      multidao.sincronizar(estado);
     },
 
     getPlayerStation() {

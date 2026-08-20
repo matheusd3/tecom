@@ -280,3 +280,62 @@ export interface GameHandle {
   scene: any;
   dispose(): void;
 }
+
+/**
+ * Versão do formato do save. Sobe sempre que um campo muda de significado —
+ * um retrato de versão diferente é recusado inteiro, porque meio estado
+ * carregado é pior que começar de novo.
+ */
+export const VERSAO_SAVE = 1;
+
+/**
+ * O `GameState` com os `Map` desmontados em pares.
+ *
+ * `JSON.stringify` serializa `Map` como `{}`: sem esta conversão o jogo
+ * voltaria sem produtos, sem equipe e sem clientes, e sem erro nenhum no
+ * console para denunciar.
+ */
+export type EstadoSerializado = Omit<GameState, "products" | "employees" | "customers"> & {
+  products: Array<[ProductType, Product]>;
+  employees: Array<[string, Employee]>;
+  customers: Array<[string, Customer]>;
+};
+
+/**
+ * O que o `GameWorld` guarda FORA do `GameState`: relógios de chegada, marcos
+ * do início do turno e memória do consultor. Sem eles a partida volta com o
+ * estado certo e o ritmo errado — clientes chegando na hora errada e o
+ * fechamento comparando com marcos zerados.
+ */
+export interface RelogiosSerializados {
+  opportunities: Opportunity[];
+  shiftReport: ShiftReport | null;
+  customerSpawnTimer: number;
+  nextCustomerSpawn: number;
+  opportunityCheckTimer: number;
+  lastOpportunityAt: Array<[string, number]>;
+  shiftStartRevenue: number;
+  shiftStartExpenses: number;
+  shiftStartSales: number;
+  shiftStartRepairs: number;
+  shiftStartMissed: number;
+  shiftStartReputation: number;
+  customerSequence: number;
+  /** `-Infinity` não sobrevive ao JSON: vai como `null` e volta como `-Infinity`. */
+  lastRepairHelpAt: number | null;
+  supportRotation: number;
+  shiftHighlights: string[];
+  supportAttendantTimer: number;
+  nextDrinkAt: Array<[string, number]>;
+  nextCoffeeAt: number;
+  shiftPerdidosPorEspera: number;
+}
+
+/** Retrato completo da partida: tudo que precisa voltar ao recarregar a página. */
+export interface InstantaneoJogo {
+  versao: number;
+  /** `Date.now()` de quando foi gravado — a tela inicial mostra "há X". */
+  salvoEm: number;
+  estado: EstadoSerializado;
+  relogios: RelogiosSerializados;
+}

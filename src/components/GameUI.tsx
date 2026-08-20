@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { PlayerStation } from "@/game/scene";
 import { CONSULTA_GAVETA, CUSTOMER_PRICE_TOLERANCE } from "@/game/types";
+import { tempoDesde, type ResumoDoSave } from "@/game/save";
 import type {
   ActionResult,
   Customer,
@@ -57,6 +58,14 @@ interface GameUIProps {
   carregando: string[];
   /** Quantos itens cabem — muda com a linha do carrinho de atendimento. */
   capacidade: number;
+  /**
+   * Partida guardada de uma sessão anterior. Quando existe, a abertura vira
+   * uma escolha em vez de mostrar o botão de abrir a loja: apertar "abrir"
+   * por reflexo começaria um dia 1 por cima do dia 12 que o jogador tinha.
+   */
+  resumoSave: ResumoDoSave | null;
+  onContinuar: () => void;
+  onRecomecar: () => void;
   /** Resposta da última interação feita pela tecla E dentro da loja. */
   mapAction: ActionResult | null;
   /** Desconto esperando aprovação do jogador, se houver. */
@@ -269,6 +278,61 @@ function JoystickMovimento({ onMove }: { onMove: (x: number, z: number) => void 
         style={{ transform: `translate(calc(-50% + ${eixo.x * 28}px), calc(-50% - ${eixo.z * 28}px))` }}
       />
       <span className="joystick__rotulo">MOVER</span>
+    </div>
+  );
+}
+
+/**
+ * A escolha de abertura quando existe partida guardada.
+ *
+ * "Começar de novo" pede confirmação no próprio botão: é a única ação da tela
+ * que destrói progresso, e um clique por engano aqui apaga dias de jogo.
+ */
+function Retomada(props: {
+  resumo: ResumoDoSave;
+  onContinuar: () => void;
+  onRecomecar: () => void;
+}) {
+  const [confirmando, setConfirmando] = useState(false);
+  const { resumo } = props;
+
+  return (
+    <div className="retomada">
+      <div className="retomada__cabecalho">
+        <span className="retomada__pulso" aria-hidden="true" />
+        <span>Partida guardada · {tempoDesde(resumo.salvoEm)}</span>
+      </div>
+      <div className="retomada__dados">
+        <div className="kpi">
+          <span className="kpi__rotulo">Dia</span>
+          <strong className="kpi__valor valor--ciano">{resumo.dia}</strong>
+        </div>
+        <div className="kpi">
+          <span className="kpi__rotulo">Caixa</span>
+          <strong className="kpi__valor valor--positivo">{formatarMoeda(resumo.caixa)}</strong>
+        </div>
+        <div className="kpi">
+          <span className="kpi__rotulo">Melhorias</span>
+          <strong className="kpi__valor">{resumo.melhorias}</strong>
+        </div>
+      </div>
+      <button className="btn btn--gigante" onClick={props.onContinuar}>
+        Continuar do dia {resumo.dia}
+      </button>
+      <button
+        className={`btn btn--largo ${confirmando ? "btn--magenta" : ""}`}
+        onClick={() => (confirmando ? props.onRecomecar() : setConfirmando(true))}
+        onBlur={() => setConfirmando(false)}
+      >
+        {confirmando
+          ? `Apagar o dia ${resumo.dia} e começar de novo?`
+          : "Começar uma loja nova"}
+      </button>
+      {confirmando && (
+        <p className="retomada__aviso">
+          A partida guardada some para sempre. Clique fora para desistir.
+        </p>
+      )}
     </div>
   );
 }
@@ -749,15 +813,29 @@ export function GameUI(props: GameUIProps) {
       <main className="palco">
         {!emTurno && (
           <section className="palco__card">
-            <p className="palco__etiqueta">Dia {dia}</p>
+            <p className="palco__etiqueta">
+              {props.resumoSave ? "Bem-vindo de volta" : `Dia ${dia}`}
+            </p>
             <h2 className="palco__titulo">
-              {fase === "summary" ? "Preparar o próximo dia" : "Preparação"}
+              {props.resumoSave
+                ? "Sua loja continua de pé"
+                : fase === "summary"
+                  ? "Preparar o próximo dia"
+                  : "Preparação"}
             </h2>
             <p className="palco__texto">
-              Ajuste preços, reponha estoque e contrate quem for preciso no
-              painel à esquerda. Quando abrir a loja, os clientes chegam sem
-              esperar: cada um é uma decisão sua.
+              {props.resumoSave
+                ? "Você fechou a aba no meio da jornada. A loja ficou como estava — o caixa, a equipe e as melhorias esperando você voltar."
+                : "Ajuste preços, reponha estoque e contrate quem for preciso no painel à esquerda. Quando abrir a loja, os clientes chegam sem esperar: cada um é uma decisão sua."}
             </p>
+            {props.resumoSave ? (
+              <Retomada
+                resumo={props.resumoSave}
+                onContinuar={props.onContinuar}
+                onRecomecar={props.onRecomecar}
+              />
+            ) : (
+              <>
             <div className="guia-inicial" aria-label="Passos recomendados para começar">
               <div className="guia-inicial__cabecalho">
                 <span className="guia-inicial__pulso" aria-hidden="true" />
@@ -819,6 +897,8 @@ export function GameUI(props: GameUIProps) {
                 O núcleo ainda não expõe <code>startShift()</code>. Assim que o
                 Codex publicar o método, este botão liga sozinho.
               </p>
+            )}
+              </>
             )}
           </section>
         )}

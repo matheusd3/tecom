@@ -19,8 +19,10 @@ import {
   OfertaDoDia,
   Upgrade,
   UpgradeId,
+  InstantaneoJogo,
+  EstadoSerializado,
 } from "./types";
-import { CUSTOMER_PRICE_TOLERANCE, DOSES_CAFE, GOLES_BEBEDOURO } from "./types";
+import { CUSTOMER_PRICE_TOLERANCE, DOSES_CAFE, GOLES_BEBEDOURO, VERSAO_SAVE } from "./types";
 
 /** Salário é mensal e o turno é um dia: a folha diária é um trinta avos. */
 const DIAS_DO_MES = 30;
@@ -702,6 +704,109 @@ export class GameWorld {
     this.customerSequence = 0;
     this.shiftHighlights = [];
     this.supportAttendantTimer = 0;
+  }
+
+  /**
+   * Retrato da partida inteira, pronto para virar JSON.
+   *
+   * Guarda também os campos privados que o `reset()` limpa: eles são o ritmo
+   * do turno (quando chega o próximo cliente, o que o consultor já falou, com
+   * que números o dia começou). Restaurar só o `GameState` devolveria a loja
+   * certa rodando no compasso errado.
+   */
+  public criarInstantaneo(): InstantaneoJogo {
+    const { products, employees, customers, ...resto } = this.state;
+    return {
+      versao: VERSAO_SAVE,
+      salvoEm: Date.now(),
+      estado: {
+        ...resto,
+        products: Array.from(products.entries()),
+        employees: Array.from(employees.entries()),
+        customers: Array.from(customers.entries()),
+      },
+      relogios: {
+        opportunities: this.opportunities,
+        shiftReport: this.shiftReport,
+        customerSpawnTimer: this.customerSpawnTimer,
+        nextCustomerSpawn: this.nextCustomerSpawn,
+        opportunityCheckTimer: this.opportunityCheckTimer,
+        lastOpportunityAt: Array.from(this.lastOpportunityAt.entries()),
+        shiftStartRevenue: this.shiftStartRevenue,
+        shiftStartExpenses: this.shiftStartExpenses,
+        shiftStartSales: this.shiftStartSales,
+        shiftStartRepairs: this.shiftStartRepairs,
+        shiftStartMissed: this.shiftStartMissed,
+        shiftStartReputation: this.shiftStartReputation,
+        customerSequence: this.customerSequence,
+        // Infinity vira null no JSON; `restaurar` desfaz.
+        lastRepairHelpAt: Number.isFinite(this.lastRepairHelpAt) ? this.lastRepairHelpAt : null,
+        supportRotation: this.supportRotation,
+        shiftHighlights: this.shiftHighlights,
+        supportAttendantTimer: this.supportAttendantTimer,
+        nextDrinkAt: Array.from(this.nextDrinkAt.entries()),
+        nextCoffeeAt: this.nextCoffeeAt,
+        shiftPerdidosPorEspera: this.shiftPerdidosPorEspera,
+      },
+    };
+  }
+
+  /**
+   * Devolve a partida ao retrato, ou recusa inteiro.
+   *
+   * A recusa é proposital: save de outra versão, JSON truncado ou campo com o
+   * tipo errado voltariam como meia partida — uma loja sem produtos, um dia
+   * sem meta — e o jogador levaria minutos para perceber que não é bug de
+   * jogo, é save podre. Melhor perder o save e começar limpo.
+   */
+  public restaurar(dados: InstantaneoJogo | null | undefined): boolean {
+    if (!dados || dados.versao !== VERSAO_SAVE) return false;
+    const bruto = dados.estado as Partial<EstadoSerializado> | undefined;
+    if (!bruto || !Array.isArray(bruto.products) || !Array.isArray(bruto.employees)) return false;
+    if (!Array.isArray(bruto.customers) || typeof bruto.day !== "number") return false;
+    // Sem produtos não existe loja: é o sintoma clássico de `Map` serializado
+    // como `{}` por um save gravado antes desta conversão existir.
+    if (bruto.products.length === 0) return false;
+
+    const relogios = dados.relogios;
+    if (!relogios || !Array.isArray(relogios.lastOpportunityAt)) return false;
+
+    try {
+      const { products, employees, customers, ...resto } = bruto as EstadoSerializado;
+      this.state = {
+        ...resto,
+        products: new Map(products),
+        employees: new Map(employees),
+        customers: new Map(customers),
+      };
+
+      this.opportunities = relogios.opportunities ?? [];
+      this.shiftReport = relogios.shiftReport ?? null;
+      this.customerSpawnTimer = relogios.customerSpawnTimer ?? 0;
+      this.nextCustomerSpawn = relogios.nextCustomerSpawn ?? 0;
+      this.opportunityCheckTimer = relogios.opportunityCheckTimer ?? 0;
+      this.lastOpportunityAt = new Map(relogios.lastOpportunityAt);
+      this.shiftStartRevenue = relogios.shiftStartRevenue ?? 0;
+      this.shiftStartExpenses = relogios.shiftStartExpenses ?? 0;
+      this.shiftStartSales = relogios.shiftStartSales ?? 0;
+      this.shiftStartRepairs = relogios.shiftStartRepairs ?? 0;
+      this.shiftStartMissed = relogios.shiftStartMissed ?? 0;
+      this.shiftStartReputation = relogios.shiftStartReputation ?? 60;
+      this.customerSequence = relogios.customerSequence ?? 0;
+      this.lastRepairHelpAt = relogios.lastRepairHelpAt ?? -Infinity;
+      this.supportRotation = relogios.supportRotation ?? 0;
+      this.shiftHighlights = relogios.shiftHighlights ?? [];
+      this.supportAttendantTimer = relogios.supportAttendantTimer ?? 0;
+      this.nextDrinkAt = new Map(relogios.nextDrinkAt ?? []);
+      this.nextCoffeeAt = relogios.nextCoffeeAt ?? 0;
+      this.shiftPerdidosPorEspera = relogios.shiftPerdidosPorEspera ?? 0;
+      return true;
+    } catch {
+      // Qualquer surpresa de formato: a partida volta ao começo em vez de
+      // continuar com metade dos campos trocados.
+      this.reset();
+      return false;
+    }
   }
 
   private createInitialState(): GameState {

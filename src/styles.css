@@ -2246,3 +2246,69 @@ button {
     line-height: 1.5;
   }
 }
+
+/* ---------- Retomada de partida guardada ----------
+   Ocupa o lugar da guia inicial e do botão de abrir a loja: quando existe save,
+   a abertura é uma escolha, não um começo. Verde-lima em vez de ciano para
+   separar "voltar ao que era seu" das ações normais do turno. */
+
+.retomada {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: -2px 0 4px;
+  padding: 12px 12px 13px;
+  border: 1px solid rgba(182, 255, 58, 0.28);
+  border-radius: 9px;
+  background: linear-gradient(135deg, rgba(182, 255, 58, 0.09), rgba(0, 229, 255, 0.05));
+}
+
+.retomada__cabecalho {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--lima);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+
+.retomada__pulso {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lima);
+  box-shadow: 0 0 8px var(--lima);
+  animation: retomada-pulso 2s ease-in-out infinite;
+}
+
+@keyframes retomada-pulso {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.retomada__dados {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.retomada__aviso {
+  margin: 0;
+  color: var(--texto-fraco);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* O jogador acabou de pedir para apagar dias de jogo: o botão precisa parecer
+   perigoso enquanto espera o segundo clique. */
+.retomada .btn--magenta {
+  white-space: normal;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .retomada__pulso {
+    animation: none;
+  }
+}

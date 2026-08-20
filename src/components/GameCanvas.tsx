@@ -26,6 +26,7 @@ import type {
 } from "@/game/types";
 import { GameUI, type Capacidades, type PedidoDesconto } from "./GameUI";
 import { Soundtrack } from "@/audio/Soundtrack";
+import { apagar, carregar, resumoDoSave, salvar, type ResumoDoSave } from "@/game/save";
 
 interface Instantaneo {
   gameState: GameState | null;
@@ -38,6 +39,18 @@ interface Instantaneo {
   /** Quantos itens cabem hoje — muda com a linha do carrinho de atendimento. */
   capacidade: number;
   mapAction: ActionResult | null;
+}
+
+/**
+ * Assinatura do fechamento: tudo que o jogador decide nessa tela.
+ *
+ * O `sincronizar` roda 4x por segundo. Sem comparar antes de gravar, o save
+ * seria reescrito centenas de vezes enquanto o jogador lê o relatório do dia.
+ * Comprar melhoria, contratar e repor estoque mudam a assinatura — então a
+ * escolha não se perde se ele fechar a aba antes de abrir a loja de novo.
+ */
+function assinaturaDoFechamento(estado: GameState): string {
+  return [estado.day, Math.round(estado.cash), estado.upgrades.length, estado.employees.size].join("|");
 }
 
 /** Frequência de sincronização entre a simulação e o React. */
@@ -106,6 +119,12 @@ export default function GameCanvas() {
   const handleRef = useRef<GameHandle | null>(null);
   const mapActionRef = useRef<ActionResult | null>(null);
   const soundtrackRef = useRef<Soundtrack | null>(null);
+  /**
+   * Assinatura do último retrato gravado. O `sincronizar` roda 4x por segundo:
+   * sem esta comparação o fechamento reescreveria o save centenas de vezes
+   * enquanto o jogador lê o relatório.
+   */
+  const assinaturaSalvaRef = useRef<string>("");
 
   const [instantaneo, setInstantaneo] = useState<Instantaneo>({
     gameState: null,
@@ -123,15 +142,29 @@ export default function GameCanvas() {
     relatorio: false,
   });
   const [erro, setErro] = useState<string | null>(null);
+  /** Partida guardada de uma sessão anterior, esperando "continuar" ou "recomeçar". */
+  const [resumoSave, setResumoSave] = useState<ResumoDoSave | null>(null);
   /** Venda abaixo da vitrine esperando o "pode fechar" do jogador. */
   const [pedidoDesconto, setPedidoDesconto] = useState<PedidoDesconto | null>(null);
   const [musicaAtiva, setMusicaAtiva] = useState(false);
   const [volumeMusica, setVolumeMusica] = useState(65);
 
+  const guardarSePreciso = useCallback((world: GameWorld) => {
+    const estado = world.getState();
+    if (estado.phase !== "summary") return;
+    const assinatura = assinaturaDoFechamento(estado);
+    if (assinatura === assinaturaSalvaRef.current) return;
+    // Falha de gravação (cota, navegação anônima) não interrompe o jogo: a
+    // assinatura fica marcada assim mesmo para não tentar 4x por segundo.
+    salvar(world);
+    assinaturaSalvaRef.current = assinatura;
+  }, []);
+
   /** Copia o estado atual da simulação para o React. */
   const sincronizar = useCallback(() => {
     const world = worldRef.current;
     if (!world) return;
+    guardarSePreciso(world);
     setInstantaneo({
       gameState: world.getState(),
       opportunities: [...world.getOpportunities()],
@@ -156,7 +189,7 @@ export default function GameCanvas() {
       const cliente = world.getState().customers.get(atual.customerId);
       return cliente?.status === "waiting" ? atual : null;
     });
-  }, []);
+  }, [guardarSePreciso]);
 
   /** A interação por teclado usa o cliente priorizado — ou o primeiro da fila. */
   const interagirComEstacao = useCallback(() => {
@@ -456,6 +489,9 @@ export default function GameCanvas() {
           selecionarCliente: temMetodo(h.world, "selectCustomer"),
           relatorio: temMetodo(h.world, "getShiftReport"),
         });
+        // A partida guardada não é carregada sozinha: quem decide entre
+        // continuar e recomeçar é o jogador, na tela de abertura.
+        setResumoSave(resumoDoSave());
         sincronizar();
 
         engine.runRenderLoop(() => {
@@ -751,8 +787,39 @@ export default function GameCanvas() {
     return resultado;
   }, [sincronizar]);
 
+  /** Retoma a partida guardada. Falha de leitura vira "começar de novo". */
+  const continuarPartida = useCallback(() => {
+    const world = worldRef.current;
+    if (!world) return;
+    const restaurado = world.restaurar(carregar());
+    if (!restaurado) {
+      apagar();
+      setResumoSave(null);
+      return;
+    }
+    // A cena é espelho e se redesenha sozinha; o que ela guarda por conta
+    // própria (contadores de popup, item no braço) precisa deste empurrão.
+    handleRef.current?.ressincronizar();
+    assinaturaSalvaRef.current = assinaturaDoFechamento(world.getState());
+    setResumoSave(null);
+    sincronizar();
+  }, [sincronizar]);
+
+  /** Descarta a partida guardada e fica com a loja nova que já está na tela. */
+  const recomecarPartida = useCallback(() => {
+    apagar();
+    assinaturaSalvaRef.current = "";
+    setResumoSave(null);
+  }, []);
+
   const reiniciar = useCallback(() => {
     worldRef.current?.reset();
+    // Recomeçar apaga o save junto: manter o antigo faria a próxima abertura
+    // oferecer um dia 12 que o jogador acabou de jogar fora.
+    apagar();
+    assinaturaSalvaRef.current = "";
+    setResumoSave(null);
+    handleRef.current?.ressincronizar();
     sincronizar();
   }, [sincronizar]);
 
@@ -799,6 +866,9 @@ export default function GameCanvas() {
           onOpportunityAction={executarOportunidade}
           onClearOpportunities={limparOportunidades}
           onReset={reiniciar}
+          resumoSave={resumoSave}
+          onContinuar={continuarPartida}
+          onRecomecar={recomecarPartida}
           onMobileMove={moverNoCelular}
           onMobileInteract={interagirComEstacao}
         />
