@@ -58,13 +58,48 @@ Essa escolha resolve três problemas de uma vez:
   vez em quando como freguês. É a fresta por onde o jogo comenta o que está
   acontecendo sem virar painel.
 
-### O que precisa ser decidido antes de escrever a fala
+### A história — decidida em 20/08/2026
 
-- Por que ele está saindo. Aposentadoria, saúde, cansaço — muda o tom de tudo
-  que ele diz e do que a loja significa.
-- O que ele deixa junto com a loja: dívida, freguesia, um fornecedor de
-  confiança, um filho que não quis o negócio.
-- Se a loja já era "Seu Micro" ou se o nome é escolha do jogador ao assumir.
+**Ele está se aposentando.** Não é doença nem fracasso: é idade e hora. Isso
+importa para o tom — o Seu Zé não está fugindo da loja, está entregando uma
+coisa que deu certo por trinta anos. Ele ensina com orgulho, não com pena, e é
+por isso que o tutorial pode ser afetuoso sem ser triste.
+
+**Ele deixa três coisas, e cada uma é mecânica, não só enfeite.** Essa é a
+regra: história em jogo de simulação que não vira número não é história, é
+texto de abertura que o jogador pula.
+
+| O que ele deixa | O que isso É no jogo |
+|---|---|
+| **A dívida** | Parcela fixa cobrada no fechamento, antes do lucro. É a razão de a meta existir e o caminho da derrota da seção 4: atrasar tem aviso, acumular tira a loja. |
+| **O fornecedor de confiança** | Preço de custo melhor que o do mercado, por relação e não por contrato — vale enquanto a reputação segurar. É a primeira coisa que o jogador perde por jogar mal, e perde de um jeito que dá para ver. |
+| **O filho que não quis o negócio** | O rosto da derrota. É ele quem aparece quando a dívida aperta, oferecendo comprar a loja de volta por pouco. Aceitar é desistir; recusar é assumir mais um mês. |
+
+O filho resolve um problema que a seção 4 deixou em aberto: derrota em jogo de
+loja costuma ser uma tela de "você faliu", que não dói. Uma pessoa batendo na
+porta com uma oferta ruim dói, e ainda dá ao jogador a chance de recusar.
+
+**A loja já se chama Seu Micro, e o nome é dele.** "Seu Zé", "Seu Micro" — é o
+mesmo "seu". A loja tem o nome do dono.
+
+E é isso que fecha o tutorial: no último dia, antes de ir embora, ele pede que
+o jogador **mantenha o nome**. Não é escolha de menu nem opção de configuração —
+é um pedido, e o jogo o trata como pedido. O letreiro na parede do fundo
+(`props.ts`) passa a ser a coisa que o jogador está segurando pelos trinta dias
+seguintes, e a vitória da seção 4 é o letreiro continuar lá.
+
+### Por que essa história resolve o arco
+
+Ela não é pano de fundo: ela **é** a estrutura que faltava.
+
+- A dívida dá à meta diária um motivo que "bater a meta" nunca teve.
+- O fornecedor dá à reputação uma consequência visível — hoje reputação é um
+  número que sobe e desce sem morder.
+- O filho dá cara à derrota.
+- O nome dá cara à vitória.
+
+Ou seja: o começo, o meio e o fim do jogo saem todos da mesma pessoa, e não de
+quatro sistemas independentes que por acaso terminam no dia 30.
 
 ### Contrato da cena
 
@@ -88,7 +123,7 @@ quando a situação que ele resolve acontece pela primeira vez.
 | Primeiro aparelho de conserto | Leva junto até a bancada, uma vez só |
 | Bebedouro esvazia | Explica que cliente com sede vai embora mais rápido |
 | Primeiro fechamento | Lê o relatório junto e explica a oferta de melhoria |
-| Último dia dele | Se despede, e o arco começa |
+| Último dia dele | Se despede e **pede que o jogador mantenha o nome da loja**. Fim do tutorial, começo do arco. |
 
 Regras que não podem ser quebradas:
 
@@ -109,11 +144,15 @@ Substituir a meta que sobe para sempre por uma temporada com data de fim.
   dobro do conteúdo que existe hoje.
 - **Objetivo declarado no dia 1**, pelo Seu Zé, em dinheiro ou em reputação —
   não em "sobreviva".
-- **Vitória** no dia 30 com o objetivo cumprido.
-- **Derrota que morde:** hoje o caixa nunca fica negativo em 40 dias. A derrota
-  precisa de causa que o jogador veja chegando — aluguel que vence, folha que
-  não fecha, reputação no chão — e de dois ou três dias de aviso antes de
-  acontecer. Derrota que chega sem aviso é bug, não desafio.
+- **Vitória** no dia 30 com o objetivo cumprido — e a vitória tem imagem: o
+  letreiro do Seu Micro continua na parede, que é exatamente o que o Seu Zé
+  pediu ao sair.
+- **Derrota que morde:** hoje o caixa nunca fica negativo em 40 dias. A causa
+  é a **dívida do Seu Zé** (seção 2): parcela cobrada no fechamento, antes do
+  lucro. Atrasar dá aviso; acumular traz o filho dele à porta com uma oferta
+  ruim pela loja. O jogador vê chegando, tem dois ou três dias para reagir e
+  pode recusar a oferta para ganhar mais um mês. Derrota que chega sem aviso é
+  bug, não desafio — e derrota que é só uma tela de "você faliu" não dói.
 
 A meta diária continua existindo, mas passa a ser o degrau do mês, não uma reta
 infinita: ela precisa parar de subir onde o lucro típico para de subir.
