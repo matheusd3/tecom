@@ -30,6 +30,7 @@ import { criarFabricaDePessoas } from "./store/characters";
 import { criarJogador } from "./store/player";
 import { criarMultidao } from "./store/crowd";
 import { criarEquipe } from "./store/staff";
+import { criarMentor } from "./store/mentor";
 import { CORES_PRODUTO, PALETA, cor } from "./store/materials";
 import type { TipoCarga } from "./store/characters";
 import type { Estacao } from "./store/layout";
@@ -195,6 +196,7 @@ export async function createGameScene(
   gameWorld = world;
 
   const equipe = criarEquipe(pessoas, world);
+  const mentor = criarMentor(pessoas);
   const jogador = criarJogador(pessoas, (estacao) => loja.destacarZona(estacao));
 
   // O que o atendente tem nos braços. É a mesma informação que o GameCanvas usa
@@ -275,6 +277,8 @@ export async function createGameScene(
       multidao.sincronizar(estado);
       multidao.atualizar(dt);
       equipe.atualizar(dt);
+      // O Seu Zé não é equipe: quem diz se ele ainda está na loja é o núcleo.
+      mentor.atualizar(dt, world.zeEstaNaLoja());
       loja.atualizarPilhas(estado);
       loja.atualizarBebedouro(estado.nivelDoBebedouro);
       // Nível negativo apaga a estação: enquanto o café não é comprado ele não
@@ -364,6 +368,7 @@ export async function createGameScene(
       jogador.dispose();
       multidao.dispose();
       equipe.dispose();
+      mentor.dispose();
       scene.dispose();
       if (gameWorld === world) {
         gameWorld = null;

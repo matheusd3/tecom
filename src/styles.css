@@ -2312,3 +2312,116 @@ button {
     animation: none;
   }
 }
+
+/* ---------- Fala do Seu Zé ----------
+   ALTO e à esquerda do palco, logo abaixo dos controles de turno. A posição
+   importa: o tutorial não pausa o turno, então ler o Seu Zé e atender a fila
+   acontecem ao mesmo tempo — e o cartão de atendimento mora na parte de baixo
+   do palco. A primeira versão disto ficava embaixo e cobria justamente esse
+   cartão, medido em 1280x720. */
+
+.fala-ze {
+  position: absolute;
+  left: calc(var(--largura-esquerda) + 14px);
+  top: calc(var(--topo-total) + 52px);
+  z-index: 30;
+  width: min(380px, calc(100vw - var(--largura-esquerda) - var(--largura-direita) - 40px));
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 13px 14px 14px;
+  border: 1px solid rgba(255, 200, 87, 0.34);
+  border-left: 3px solid var(--ambar);
+  border-radius: 10px;
+  background: linear-gradient(150deg, rgba(28, 24, 16, 0.95), rgba(14, 19, 24, 0.95));
+  box-shadow: 0 12px 34px -18px #000;
+  animation: fala-ze-entra 0.24s ease-out;
+}
+
+/* A despedida é o fim do tutorial e o começo do arco: muda de cor para não
+   passar por "mais uma dica". */
+.fala-ze--despedida {
+  border-color: rgba(182, 255, 58, 0.34);
+  border-left-color: var(--lima);
+}
+
+@keyframes fala-ze-entra {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fala-ze__quem {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.fala-ze__avatar {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 200, 87, 0.16);
+  border: 1px solid rgba(255, 200, 87, 0.4);
+  color: var(--ambar);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fala-ze--despedida .fala-ze__avatar {
+  background: rgba(182, 255, 58, 0.14);
+  border-color: rgba(182, 255, 58, 0.4);
+  color: var(--lima);
+}
+
+.fala-ze__nome {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.fala-ze__nome strong {
+  font-size: 13px;
+  color: var(--texto);
+}
+
+.fala-ze__nome span {
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--texto-fraco);
+}
+
+.fala-ze__texto {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--texto);
+}
+
+.fala-ze__acoes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+/* Em tela de celular os painéis somem e o cartão ocupa a largura toda. */
+/* Em tela de celular os painéis somem; o cartão ocupa a largura e continua no
+   alto, longe do cartão de atendimento e dos controles de toque embaixo. */
+@media (max-width: 900px) {
+  .fala-ze {
+    left: 10px;
+    right: 10px;
+    top: calc(var(--topo-total) + 46px);
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fala-ze {
+    animation: none;
+  }
+}

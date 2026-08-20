@@ -5,6 +5,28 @@ export type ServiceType = "diagnosis" | "repair" | "upgrade" | "cleaning";
 export type EmployeeRole = "seller" | "technician" | "manager" | "consultant";
 export type CustomerStatus = "waiting" | "beingServed" | "repairing" | "leaving";
 export type GamePhase = "planning" | "active" | "summary";
+
+/**
+ * Passos do tutorial. Cada um aparece quando a situação que ele resolve
+ * acontece pela primeira vez — nunca antes de o jogador precisar dela.
+ */
+export type TutorialPassoId =
+  | "atender"
+  | "repor"
+  | "reparo"
+  | "bebedouro"
+  | "fechamento"
+  | "despedida";
+
+/** Quantos dias o Seu Zé fica na loja antes de se aposentar. */
+export const DIAS_COM_ZE = 3;
+
+export interface EstadoTutorial {
+  /** Passos já mostrados. Vai no save: senão o jogo reensina tudo a cada recarga. */
+  passosVistos: TutorialPassoId[];
+  /** O jogador dispensou as lições. O Seu Zé continua na loja até o dia 3. */
+  pulado: boolean;
+}
 export type ShiftEventType = "influencer" | "couponLeak" | "powerSurge";
 export type RepairStatus = "queued" | "inProgress" | "ready" | "returning" | "completed";
 export type UpgradeId =
@@ -213,6 +235,12 @@ export interface GameState {
   nivelDoBebedouro: number;
   /** Doses disponíveis na cafeteira. Café é consumível e pode ser reposto pela equipe. */
   nivelDoCafe: number;
+  /**
+   * Tutorial conduzido pelo Seu Zé. Mora no `GameState` — e não numa variável
+   * do componente — porque tem de sobreviver ao recarregar da página junto com
+   * o resto da partida (contrato 3 da Fase 6).
+   */
+  tutorial: EstadoTutorial;
 }
 
 /**
@@ -286,7 +314,7 @@ export interface GameHandle {
  * um retrato de versão diferente é recusado inteiro, porque meio estado
  * carregado é pior que começar de novo.
  */
-export const VERSAO_SAVE = 1;
+export const VERSAO_SAVE = 2;
 
 /**
  * O `GameState` com os `Map` desmontados em pares.

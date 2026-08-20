@@ -21,8 +21,79 @@ import {
   UpgradeId,
   InstantaneoJogo,
   EstadoSerializado,
+  TutorialPassoId,
 } from "./types";
-import { CUSTOMER_PRICE_TOLERANCE, DOSES_CAFE, GOLES_BEBEDOURO, VERSAO_SAVE } from "./types";
+import { CUSTOMER_PRICE_TOLERANCE, DIAS_COM_ZE, DOSES_CAFE, GOLES_BEBEDOURO, VERSAO_SAVE } from "./types";
+
+/**
+ * O que o Seu Zé ensina, e quando.
+ *
+ * `gatilho` é a situação que o passo resolve acontecendo AGORA — nada aparece
+ * antes de o jogador precisar. `jaResolvido` é a outra metade da regra: quem
+ * descobriu sozinho não leva aula. Passo cujo gatilho passa sem ser mostrado
+ * não se perde; ele volta na próxima vez que a situação aparecer.
+ */
+interface PassoDoTutorial {
+  id: TutorialPassoId;
+  /** Fala do Seu Zé, em parágrafos. A despedida é a única com mais de um. */
+  fala: string[];
+  gatilho(estado: GameState): boolean;
+  jaResolvido?(estado: GameState): boolean;
+}
+
+/** Cliente que já terminou de entrar e está atendível no balcão. */
+function esperandoNoBalcao(estado: GameState, filtro: (c: Customer) => boolean): boolean {
+  for (const cliente of estado.customers.values()) {
+    if (cliente.status !== "waiting" || !filtro(cliente)) continue;
+    if (estado.time - cliente.arrivalTime >= CUSTOMER_WALK_IN_SECONDS) return true;
+  }
+  return false;
+}
+
+const PASSOS_DO_TUTORIAL: PassoDoTutorial[] = [
+  {
+    id: "atender",
+    fala: ["Chegou freguês, você vai até ele e aperta E. Não deixa ninguém falando sozinho — isso aqui não é loja de shopping."],
+    gatilho: (estado) => estado.phase === "active" && esperandoNoBalcao(estado, (c) => !!c.needsProduct),
+    // Quem já vendeu descobriu o E sozinho e não precisa de aula sobre o E.
+    jaResolvido: (estado) => estado.sales.length > 0,
+  },
+  {
+    id: "reparo",
+    fala: ["Aparelho a gente recebe no balcão e leva pra bancada, de mão em mão. E nunca prometa prazo que a bancada não aguenta: é assim que se perde freguês pra vida toda."],
+    gatilho: (estado) => estado.phase === "active" && esperandoNoBalcao(estado, (c) => !!c.needsService),
+    jaResolvido: (estado) => estado.repairs.length > 0,
+  },
+  {
+    id: "repor",
+    fala: ["Prateleira vazia não vende, meu filho. O que você compra cai lá nos fundos, no almoxarifado; alguém tem que trazer pra frente. Hoje esse alguém é você."],
+    gatilho: (estado) => {
+      for (const produto of estado.products.values()) {
+        if (produto.stock <= 0 && produto.storage > 0) return true;
+      }
+      return false;
+    },
+  },
+  {
+    id: "bebedouro",
+    fala: ["Enche o bebedouro. Parece bobagem, mas gente com sede tem pressa, e gente com pressa vai embora sem comprar."],
+    gatilho: (estado) => estado.phase === "active" && estado.nivelDoBebedouro <= 0,
+  },
+  {
+    id: "fechamento",
+    fala: ["Fechou o dia, senta e olha o número. Não é pra se orgulhar nem pra se assustar: é pra saber o que comprar amanhã. E escolhe uma melhoria só — dinheiro parado em bugiganga não abre a porta."],
+    gatilho: (estado) => estado.phase === "summary",
+  },
+  {
+    id: "despedida",
+    fala: [
+      "Amanhã eu não venho mais. A loja é sua — com a dívida, que eu não vou esconder de você, e com o fornecedor, que atende bem quem ele respeita. O resto você já sabe fazer.",
+      "Só um pedido. O nome. A rua toda me chama de Seu Zé, e a loja pegou o nome de mim. Meu filho não quis ficar com ela. Se você puder deixar o letreiro como está, eu agradeço.",
+    ],
+    // Cai no fechamento do último dia dele: aí o `day` já virou o seguinte.
+    gatilho: (estado) => estado.phase === "summary" && estado.day > DIAS_COM_ZE,
+  },
+];
 
 /** Salário é mensal e o turno é um dia: a folha diária é um trinta avos. */
 const DIAS_DO_MES = 30;
@@ -695,6 +766,63 @@ export class GameWorld {
     return { ok: true, message: "Cliente dispensado. A reputação sentiu a porta batendo." };
   }
 
+  /**
+   * O Seu Zé está na loja?
+   *
+   * Ele fica os três primeiros dias, e sai depois de se despedir — por isso a
+   * conta é pela despedida, não pelo dia. Assim ele continua na tela durante o
+   * fechamento do terceiro dia, que é justamente quando ele se despede, e o
+   * save não precisa de regra extra para saber se ele já foi embora.
+   */
+  public zeEstaNaLoja(): boolean {
+    return !this.state.tutorial.passosVistos.includes("despedida");
+  }
+
+  /** Dia em que ele se aposenta, para a interface poder avisar. */
+  public ultimoDiaDoZe(): number {
+    return DIAS_COM_ZE;
+  }
+
+  /**
+   * O que o Seu Zé tem a dizer agora, ou nada.
+   *
+   * Só fala do que está acontecendo, e uma coisa de cada vez. Passo que o
+   * jogador já resolveu sozinho é marcado como visto sem nunca aparecer: quem
+   * descobriu o balcão antes de mandarem não leva aula sobre o balcão.
+   */
+  public passoDoTutorial(): { id: TutorialPassoId; fala: string[] } | undefined {
+    if (!this.zeEstaNaLoja()) return undefined;
+    for (const passo of PASSOS_DO_TUTORIAL) {
+      if (this.state.tutorial.passosVistos.includes(passo.id)) continue;
+      // A despedida é história, não lição: ela acontece mesmo com o tutorial
+      // pulado, porque é ela que começa o arco.
+      if (this.state.tutorial.pulado && passo.id !== "despedida") continue;
+      if (passo.jaResolvido?.(this.state)) {
+        this.state.tutorial.passosVistos.push(passo.id);
+        continue;
+      }
+      if (passo.gatilho(this.state)) return { id: passo.id, fala: passo.fala };
+    }
+    return undefined;
+  }
+
+  public marcarPassoVisto(id: TutorialPassoId): void {
+    if (!this.state.tutorial.passosVistos.includes(id)) {
+      this.state.tutorial.passosVistos.push(id);
+    }
+  }
+
+  /**
+   * Dispensa as lições. O Seu Zé continua na loja os três dias e continua se
+   * despedindo: pular é dizer "não precisa me ensinar", não "tira ele daí".
+   */
+  public pularTutorial(): void {
+    this.state.tutorial.pulado = true;
+    for (const passo of PASSOS_DO_TUTORIAL) {
+      if (passo.id !== "despedida") this.marcarPassoVisto(passo.id);
+    }
+  }
+
   public reset(): void {
     this.state = this.createInitialState();
     this.opportunities = [];
@@ -846,6 +974,7 @@ export class GameWorld {
       upgrades: [], upgradesOferecidos: [],
       nivelDoBebedouro: GOLES_BEBEDOURO,
       nivelDoCafe: 0,
+      tutorial: { passosVistos: [], pulado: false },
     };
   }
 

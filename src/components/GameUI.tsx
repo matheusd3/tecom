@@ -21,6 +21,7 @@ import type {
   Product,
   ProductType,
   ShiftReport,
+  TutorialPassoId,
   Upgrade,
 } from "@/game/types";
 
@@ -63,6 +64,10 @@ interface GameUIProps {
    * uma escolha em vez de mostrar o botão de abrir a loja: apertar "abrir"
    * por reflexo começaria um dia 1 por cima do dia 12 que o jogador tinha.
    */
+  /** Fala do Seu Zé para a situação de agora. */
+  passoTutorial: { id: TutorialPassoId; fala: string[] } | null;
+  onEntendiPasso: (id: TutorialPassoId) => void;
+  onPularTutorial: () => void;
   resumoSave: ResumoDoSave | null;
   onContinuar: () => void;
   onRecomecar: () => void;
@@ -279,6 +284,46 @@ function JoystickMovimento({ onMove }: { onMove: (x: number, z: number) => void 
       />
       <span className="joystick__rotulo">MOVER</span>
     </div>
+  );
+}
+
+/**
+ * A fala do Seu Zé.
+ *
+ * Não pausa o turno (contrato 2 da Fase 6): o relógio é ferramenta do jogador,
+ * não do jogo, e um tutorial que congela a loja ensina a jogar um jogo que não
+ * existe. Por isso o cartão fica de canto e espera — quem quiser continuar
+ * atendendo enquanto lê, atende.
+ */
+function FalaDoZe(props: {
+  passo: { id: TutorialPassoId; fala: string[] };
+  onEntendi: (id: TutorialPassoId) => void;
+  onPular: () => void;
+}) {
+  const despedida = props.passo.id === "despedida";
+  return (
+    <aside className={`fala-ze ${despedida ? "fala-ze--despedida" : ""}`} aria-live="polite">
+      <div className="fala-ze__quem">
+        <span className="fala-ze__avatar" aria-hidden="true">Zé</span>
+        <div className="fala-ze__nome">
+          <strong>Seu Zé</strong>
+          <span>{despedida ? "último dia na loja" : "antigo dono"}</span>
+        </div>
+      </div>
+      {props.passo.fala.map((paragrafo, i) => (
+        <p className="fala-ze__texto" key={i}>{paragrafo}</p>
+      ))}
+      <div className="fala-ze__acoes">
+        <button className="btn btn--ativo" onClick={() => props.onEntendi(props.passo.id)}>
+          {despedida ? "Pode deixar, Seu Zé" : "Entendi"}
+        </button>
+        {!despedida && (
+          <button className="btn btn--pequeno" onClick={props.onPular}>
+            Já sei jogar
+          </button>
+        )}
+      </div>
+    </aside>
   );
 }
 
@@ -801,6 +846,14 @@ export function GameUI(props: GameUIProps) {
           </span>
         )}
       </div>
+
+      {props.passoTutorial && (
+        <FalaDoZe
+          passo={props.passoTutorial}
+          onEntendi={props.onEntendiPasso}
+          onPular={props.onPularTutorial}
+        />
+      )}
 
       {/* Controles exibidos apenas em telas de toque. O teclado continua
           funcionando normalmente em computadores. */}

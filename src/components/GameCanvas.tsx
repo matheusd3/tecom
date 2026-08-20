@@ -22,6 +22,7 @@ import type {
   ProductType,
   EmployeeRole,
   ShiftReport,
+  TutorialPassoId,
   Upgrade,
 } from "@/game/types";
 import { GameUI, type Capacidades, type PedidoDesconto } from "./GameUI";
@@ -39,6 +40,8 @@ interface Instantaneo {
   /** Quantos itens cabem hoje — muda com a linha do carrinho de atendimento. */
   capacidade: number;
   mapAction: ActionResult | null;
+  /** O que o Seu Zé tem a dizer agora, se estiver na loja e vier ao caso. */
+  passoTutorial: { id: TutorialPassoId; fala: string[] } | null;
 }
 
 /**
@@ -135,6 +138,7 @@ export default function GameCanvas() {
     carregando: [],
     capacidade: 1,
     mapAction: null,
+    passoTutorial: null,
   });
   const [capacidades, setCapacidades] = useState<Capacidades>({
     iniciarTurno: false,
@@ -181,6 +185,7 @@ export default function GameCanvas() {
       }),
       capacidade: world.capacidadeDeCarga(),
       mapAction: mapActionRef.current,
+      passoTutorial: world.passoDoTutorial() ?? null,
     });
     // Se o cliente desistiu enquanto o desconto esperava resposta, o pedido
     // morre com ele — senão o botão fecharia uma venda com quem já saiu.
@@ -787,6 +792,16 @@ export default function GameCanvas() {
     return resultado;
   }, [sincronizar]);
 
+  const entendiOPasso = useCallback((id: TutorialPassoId) => {
+    worldRef.current?.marcarPassoVisto(id);
+    sincronizar();
+  }, [sincronizar]);
+
+  const pularTutorial = useCallback(() => {
+    worldRef.current?.pularTutorial();
+    sincronizar();
+  }, [sincronizar]);
+
   /** Retoma a partida guardada. Falha de leitura vira "começar de novo". */
   const continuarPartida = useCallback(() => {
     const world = worldRef.current;
@@ -866,6 +881,9 @@ export default function GameCanvas() {
           onOpportunityAction={executarOportunidade}
           onClearOpportunities={limparOportunidades}
           onReset={reiniciar}
+          passoTutorial={instantaneo.passoTutorial}
+          onEntendiPasso={entendiOPasso}
+          onPularTutorial={pularTutorial}
           resumoSave={resumoSave}
           onContinuar={continuarPartida}
           onRecomecar={recomecarPartida}
