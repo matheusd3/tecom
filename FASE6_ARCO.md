@@ -1,0 +1,229 @@
+# Fase 6 — o jogo passa a ter fim
+
+Antes de mexer, leia a seção 5 do `FASE3_MELHORIAS.md` (armadilhas da cena) e a
+seção 6 (como testar com o painel oculto), a seção 9 do `FASE5_EQUIPE.md`
+(contratos que não podem quebrar) e a seção 1 do `FASE4_BEBEDOURO.md`.
+
+O tema desta fase é um só: **o jogo acaba de conteúdo no dia 15 e não avisa.**
+Tudo aqui existe para dar começo, meio e fim — e para que as ideias novas
+entrem como degraus de uma escada, não como mais sorteio.
+
+---
+
+## 1. Diagnóstico medido — o que estamos consertando
+
+Simulação headless do `GameWorld` (esbuild + node, sem navegador), 5 partidas de
+40 dias, pilotadas por um jogador ideal: teleporta, atende no instante em que
+dá, repõe de graça, aprova todo desconto, compra a melhoria recomendada e
+contrata quando sobra caixa.
+
+| Medida | Resultado |
+|---|---|
+| Catálogo de melhorias esgotado | **dia 15, em 5 de 5 partidas** |
+| Meta batida entre os dias 25 e 40 | 0 a 1 partida de 5 |
+| Caixa no dia 40 falhando a meta quase todo dia | **R$ 424 mil** — nunca ficou negativo |
+| Lucro por turno depois do dia 13 | oscila em torno de R$ 2.500, sem tendência |
+| Meta por turno | `900 + 180 × (dia − 1)`, uma reta sem teto |
+
+Três conclusões, e nenhuma é opinião:
+
+1. **Do dia 15 em diante o fechamento oferece uma tela vazia.** São 14
+   melhorias e uma oferta por dia.
+2. **A meta virou decoração.** Ela cruza o lucro típico por volta do dia 13 e
+   nunca mais é alcançada — e falhar não custa nada, porque o caixa continua
+   subindo.
+3. **O jogador real vai pior que a medição.** A simulação teleporta; quem joga
+   anda com WASD e carrega no máximo 4 itens. O dia em que a meta fica
+   inalcançável de verdade é *antes* do 13.
+
+**Regra que sai daí, e que vale para tudo nesta fase:** evento novo que não
+sobe degrau não conta. Adicionar cinco eventos sorteados a um jogo que já tem
+três deixa os dias 1 a 15 mais variados e continua acabando no dia 15.
+
+---
+
+## 2. Seu Zé — o antigo dono
+
+Seu Zé não é o jogador. É o velho dono, que está passando a loja adiante e fica
+os primeiros dias ensinando antes de ir embora.
+
+Essa escolha resolve três problemas de uma vez:
+
+- **O tutorial vira uma pessoa**, não uma caixa de texto. Quem ensina a atender
+  é alguém que atende há trinta anos, e as instruções saem como fala dele.
+- **O arco ganha abertura e relógio.** O dia em que o Seu Zé vai embora é uma
+  data marcada desde o começo — o tutorial tem fim declarado, e o jogo tem um
+  "agora é com você".
+- **Sobra uma voz para o consultor.** Depois que sai, ele continua aparecendo de
+  vez em quando como freguês. É a fresta por onde o jogo comenta o que está
+  acontecendo sem virar painel.
+
+### O que precisa ser decidido antes de escrever a fala
+
+- Por que ele está saindo. Aposentadoria, saúde, cansaço — muda o tom de tudo
+  que ele diz e do que a loja significa.
+- O que ele deixa junto com a loja: dívida, freguesia, um fornecedor de
+  confiança, um filho que não quis o negócio.
+- Se a loja já era "Seu Micro" ou se o nome é escolha do jogador ao assumir.
+
+### Contrato da cena
+
+Seu Zé é um `Personagem` como qualquer outro (`characters.ts`) e mora no posto
+atrás do balcão. **Ele não é `seller-1`** — esse é o boneco do jogador
+(`staff.ts`, `ID_DO_JOGADOR`). Ele também não entra em `state.employees`: não
+tem salário, não conta na folha, não aparece na contratação. É um NPC com posto
+fixo enquanto durar o tutorial.
+
+---
+
+## 3. O tutorial — Seu Zé mostra, o jogador faz
+
+Formato: **nunca explica o que o jogador ainda não precisa.** Cada passo aparece
+quando a situação que ele resolve acontece pela primeira vez.
+
+| Quando | O que Seu Zé faz |
+|---|---|
+| Loja abre no dia 1 | Aponta o balcão e manda o jogador atender o primeiro cliente com `E` |
+| Prateleira zera pela primeira vez | Manda buscar no almoxarifado e mostra a viagem |
+| Primeiro aparelho de conserto | Leva junto até a bancada, uma vez só |
+| Bebedouro esvazia | Explica que cliente com sede vai embora mais rápido |
+| Primeiro fechamento | Lê o relatório junto e explica a oferta de melhoria |
+| Último dia dele | Se despede, e o arco começa |
+
+Regras que não podem ser quebradas:
+
+- **Passo que o jogador já fez sozinho não aparece.** Quem descobriu o `E`
+  antes de mandarem não leva aula sobre o `E`.
+- **O tutorial não pausa o turno.** Pausa é pausa (contrato 1 da Fase 5) e o
+  relógio parado é ferramenta do jogador, não do jogo.
+- **Tem como pular.** Quem já jogou não passa por isso de novo — e o estado de
+  "já vi o tutorial" vai no save, não em variável de sessão.
+
+---
+
+## 4. O arco — o que fecha o jogo
+
+Substituir a meta que sobe para sempre por uma temporada com data de fim.
+
+- **Duração alvo: 30 dias.** Cabe no save (~230 KB medidos no dia 30) e é o
+  dobro do conteúdo que existe hoje.
+- **Objetivo declarado no dia 1**, pelo Seu Zé, em dinheiro ou em reputação —
+  não em "sobreviva".
+- **Vitória** no dia 30 com o objetivo cumprido.
+- **Derrota que morde:** hoje o caixa nunca fica negativo em 40 dias. A derrota
+  precisa de causa que o jogador veja chegando — aluguel que vence, folha que
+  não fecha, reputação no chão — e de dois ou três dias de aviso antes de
+  acontecer. Derrota que chega sem aviso é bug, não desafio.
+
+A meta diária continua existindo, mas passa a ser o degrau do mês, não uma reta
+infinita: ela precisa parar de subir onde o lucro típico para de subir.
+
+---
+
+## 5. A escada dos eventos
+
+Cinco ideias novas, ordenadas por degrau. Cada uma destrava a seguinte — é isso
+que separa "mais conteúdo" de "conteúdo que dura".
+
+### 5.1 A blogueira — degrau 1 (dias 1 a 8)
+
+Chega com o celular quebrado e pede o conserto de graça. Aceitar custa tempo de
+bancada e peça; recusar não custa nada hoje.
+
+**É a primeira decisão do jogo cuja consequência não cabe em 120 segundos** —
+hoje tudo resolve dentro do turno. Já existe o evento `influencer` ("TechTok na
+fila") disparando em 28% dos turnos sem fazer quase nada: esta é a versão dele
+com dente.
+
+**Cuidado de desenho:** se aceitar for sempre certo, não é decisão. Ela tem que
+aparecer também em dia ruim — bancada cheia — para que o conserto de graça
+empurre um reparo pago para depois do fechamento.
+
+### 5.2 O bêbado — degrau 1 (dias 1 a 8)
+
+Entra, atrapalha, derruba a paciência de quem está na fila. Sai quando o
+jogador chega perto e manda sair.
+
+**Todo motivo de andar pela loja hoje é logística** — buscar, levar, repor. Ele
+é o primeiro motivo de andar que não é carregar coisa. Barato de fazer e muda o
+ritmo do turno.
+
+**Armadilha da cena:** cliente não colide, o jogador sim (`FASE3` §5.4). O
+bêbado segue a regra dos clientes; a interação é por distância ao boneco, como
+`estacaoEm` faz com os móveis.
+
+### 5.3 O segurança — degrau 2 (a partir do dia ~10)
+
+Contratação nova. Consome água e café como o resto da equipe, e **quando o
+suprimento falha ele se distrai.**
+
+Esta é a ideia mais forte da lista, e por um motivo estrutural: hoje bebedouro e
+café são tarefa — você abastece porque tem que abastecer. Um funcionário cuja
+atenção *depende* do abastecimento transforma uma tarefa chata numa linha de
+suprimento com consequência, e reaproveita a Fase 4 inteira de graça.
+
+### 5.4 O assalto — degrau 3 (a partir do dia ~15, frequência sobe com o caixa)
+
+**Decisão com relógio, não briga.** O bandido entra e começa a contagem:
+
+| Escolha | Custo |
+|---|---|
+| Botão de pânico | Perde o caixa da gaveta; o dia fecha mais cedo |
+| Entregar | Perde mais dinheiro e cai reputação |
+| O segurança intercepta | De graça — *se* ele estiver com água e café em dia |
+
+Combate ficou de fora por decisão tomada: detecção de acerto, animação e uma
+regra para quando o jogador perde a briga seriam a maior parte de trabalho da
+fase, para uma coisa que aparece raramente, e mudariam o tom do jogo e a
+classificação indicativa na Steam. Esta versão guarda a tensão inteira e faz o
+segurança valer o salário.
+
+### 5.5 O marketplace — degrau 4 (última parte do arco)
+
+Vender fora da loja, no online.
+
+**Regra inegociável: consome prateleira e consome o seu tempo.** Se virar renda
+passiva, ele compete com a loja e esvazia o jogo justamente por dentro, onde
+ele é bonito. É um segundo canal que disputa estoque com o balcão, não uma
+torneira.
+
+É a peça maior da lista e a última a entrar.
+
+---
+
+## 6. Ordem sugerida
+
+1. História do Seu Zé escrita (seção 2) — sem isso o tutorial não tem voz.
+2. Seu Zé na cena, com posto fixo e falas do tutorial (seção 3).
+3. O arco: objetivo, vitória, derrota com aviso (seção 4).
+4. Blogueira e bêbado (5.1 e 5.2) — degrau 1, os dois baratos.
+5. Segurança (5.3), e só então assalto (5.4) — o assalto sem segurança é só
+   perda.
+6. Marketplace (5.5).
+
+---
+
+## 7. Contratos desta fase
+
+1. **Seu Zé não é `seller-1` e não entra em `state.employees`.** Sem salário,
+   sem folha, sem vaga de contratação.
+2. **O tutorial não pausa o turno.** Contrato 1 da Fase 5 continua valendo.
+3. **"Já vi o tutorial" e o progresso do arco vão no save**, no
+   `criarInstantaneo()`. Estado de tutorial em variável de sessão volta a
+   ensinar tudo de novo a cada recarga.
+4. **Save novo pede versão nova.** Campo novo no `GameState` sem subir
+   `VERSAO_SAVE` faz o save antigo voltar com o campo `undefined` — e o
+   `restaurar()` aceita, porque a validação olha formato, não completude.
+5. **Evento novo não vira só mais uma linha do `rollShiftEvent`.** Cada um tem
+   degrau (seção 5) e uma condição de entrada ligada ao dia ou ao caixa.
+
+---
+
+## 8. Critério de pronto da fase
+
+- Uma partida chega ao dia 30 e **termina** — com vitória ou com derrota.
+- Existe pelo menos um caminho de derrota que um jogador desatento percorre, e
+  ele recebe aviso antes.
+- O fechamento nunca mostra a tela de oferta vazia.
+- Quem recarrega a página no meio do arco volta no lugar certo, sem rever o
+  tutorial.
