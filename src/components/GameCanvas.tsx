@@ -76,9 +76,22 @@ const TURNO_PAUSADO = (): ActionResult => ({
   message: "Turno pausado: retome o relógio para atender a loja.",
 });
 
+/**
+ * O jogo parou o relógio para alguém falar. Mandar o jogador "retomar" aqui
+ * seria mentira: quem parou não foi ele, e o caminho é responder o cartão.
+ */
+const PARADO_PARA_LER = (): ActionResult => ({
+  ok: false,
+  message: "O relógio está parado enquanto alguém fala com você. Responda o cartão para continuar.",
+});
+
 function turnoPausado(world: GameWorld | null): boolean {
   const state = world?.getState();
   return !!state && state.isPaused && state.phase === "active";
+}
+
+function paradoPeloJogo(world: GameWorld | null): boolean {
+  return !!world?.getState().pausadoPeloJogo;
 }
 
 // Ponte com os métodos do turno. O contrato está em PHASE2_TASKS.md; enquanto o
@@ -210,7 +223,7 @@ export default function GameCanvas() {
     if (!world || !handle) return;
     const state = world.getState();
     if (turnoPausado(world)) {
-      mapActionRef.current = TURNO_PAUSADO();
+      mapActionRef.current = paradoPeloJogo(world) ? PARADO_PARA_LER() : TURNO_PAUSADO();
       sincronizar();
       return;
     }

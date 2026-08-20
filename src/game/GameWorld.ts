@@ -387,12 +387,45 @@ export class GameWorld {
     return this.state.phase === "active" && this.state.isPaused;
   }
 
+  /**
+   * Pausa que o JOGADOR pediu — a única que barra as ações dele.
+   *
+   * Quando o jogo para o relógio sozinho para alguém falar, o jogador continua
+   * podendo responder: senão o cartão da blogueira apareceria com os dois
+   * botões mortos, o que é o pior tipo de bug — parece que o jogo travou.
+   */
+  private pausadoPeloJogador(): boolean {
+    return this.pausado() && !this.state.pausadoPeloJogo;
+  }
+
+  /**
+   * Para o relógio para o jogador ler.
+   *
+   * Não sobrescreve pausa que já existia: se ele mesmo pausou antes, a pausa
+   * continua sendo dele e retomar não é da conta do jogo.
+   */
+  private pausarParaLer(): void {
+    if (this.state.phase !== "active" || this.state.isPaused) return;
+    this.state.isPaused = true;
+    this.state.pausadoPeloJogo = true;
+  }
+
+  /** Devolve o relógio, mas só se quem parou foi o jogo. */
+  private retomarDepoisDeLer(): void {
+    if (!this.state.pausadoPeloJogo) return;
+    this.state.pausadoPeloJogo = false;
+    this.state.isPaused = false;
+  }
+
   public togglePause(): void {
     if (this.state.phase !== "active") {
       this.startShift();
       return;
     }
     this.state.isPaused = !this.state.isPaused;
+    // Encostou no botão, a pausa passa a ser dele: o jogo não retoma sozinho
+    // depois, nem que a fala tenha sido a causa original da parada.
+    this.state.pausadoPeloJogo = false;
   }
 
   public startShift(): ActionResult {
@@ -851,15 +884,34 @@ export class GameWorld {
         this.state.tutorial.passosVistos.push(passo.id);
         continue;
       }
-      if (passo.gatilho(this.state)) return { id: passo.id, fala: passo.fala };
+      if (passo.gatilho(this.state)) {
+        this.abrirPasso(passo.id);
+        return { id: passo.id, fala: passo.fala };
+      }
     }
+    this.state.tutorial.passoNaTela = undefined;
     return undefined;
+  }
+
+  /**
+   * Um passo entrou na tela. Para o relógio: as falas do Seu Zé caem no meio
+   * do turno, e ler enquanto a paciência da fila corre é ler com prejuízo.
+   *
+   * Idempotente porque a interface consulta quatro vezes por segundo — sem a
+   * comparação, isto repausaria o jogo logo depois de o jogador retomar.
+   */
+  private abrirPasso(id: TutorialPassoId): void {
+    if (this.state.tutorial.passoNaTela === id) return;
+    this.state.tutorial.passoNaTela = id;
+    this.pausarParaLer();
   }
 
   public marcarPassoVisto(id: TutorialPassoId): void {
     if (!this.state.tutorial.passosVistos.includes(id)) {
       this.state.tutorial.passosVistos.push(id);
     }
+    if (this.state.tutorial.passoNaTela === id) this.state.tutorial.passoNaTela = undefined;
+    this.retomarDepoisDeLer();
   }
 
   /**
@@ -868,6 +920,8 @@ export class GameWorld {
    */
   public pularTutorial(): void {
     this.state.tutorial.pulado = true;
+    this.state.tutorial.passoNaTela = undefined;
+    this.retomarDepoisDeLer();
     for (const passo of PASSOS_DO_TUTORIAL) {
       if (passo.id !== "despedida") this.marcarPassoVisto(passo.id);
     }
@@ -1396,6 +1450,7 @@ export class GameWorld {
     }
     this.state.phase = "summary";
     this.state.isPaused = true;
+    this.state.pausadoPeloJogo = false;
     this.state.day++;
     // A meta parava de fazer sentido: crescia R$ 180 por dia para sempre
     // enquanto o lucro medido estacionava perto de R$ 2.500 a partir do dia 13.
@@ -1528,24 +1583,26 @@ export class GameWorld {
    * serviço já em andamento, então dizer sim empurra um reparo PAGO para trás.
    */
   public aceitarBlogueira(): ActionResult {
-    if (this.pausado()) return TURNO_PAUSADO();
+    if (this.pausadoPeloJogador()) return TURNO_PAUSADO();
     const cliente = this.blogueiraNoBalcao();
     if (!cliente) return { ok: false, message: "Ninguém está pedindo favor agora." };
     cliente.pedeDeGraca = false;
     cliente.patience = Math.min(100, cliente.patience + 25);
+    this.retomarDepoisDeLer();
     this.addHighlight(`${cliente.name} vai ser atendida de graça. Receba o aparelho no balcão.`);
     return { ok: true, message: "Combinado. Receba o aparelho no balcão e leve para a bancada." };
   }
 
   /** Recusa. Não custa bancada — custa reputação, porque ela comenta. */
   public recusarBlogueira(): ActionResult {
-    if (this.pausado()) return TURNO_PAUSADO();
+    if (this.pausadoPeloJogador()) return TURNO_PAUSADO();
     const cliente = this.blogueiraNoBalcao();
     if (!cliente) return { ok: false, message: "Ninguém está pedindo favor agora." };
     cliente.pedeDeGraca = false;
     cliente.status = "leaving";
     cliente.departureTime = this.state.time + 2;
     cliente.satisfaction = 20;
+    this.retomarDepoisDeLer();
     this.state.reputation = Math.max(0, this.state.reputation - REPUTACAO_POR_RECUSAR_BLOGUEIRA);
     this.addHighlight(
       `${cliente.name} saiu sem o conserto e contou pra internet: -${REPUTACAO_POR_RECUSAR_BLOGUEIRA} de reputação.`
@@ -1978,6 +2035,14 @@ export class GameWorld {
       pedeDeGraca: true,
     });
     this.addHighlight("Nina do TechTok chegou com o celular quebrado — e não veio pagar.");
+    // Só na PRIMEIRA aparição da partida. A regra dela é nova e precisa ser
+    // lida com calma; da segunda em diante o relógio correndo É o custo da
+    // decisão — ela só aparece com a bancada cheia, e deliberar de graça
+    // enquanto a fila congela tiraria justamente o que torna isso uma escolha.
+    if (!this.state.blogueiraJaPausou) {
+      this.state.blogueiraJaPausou = true;
+      this.pausarParaLer();
+    }
     return true;
   }
 

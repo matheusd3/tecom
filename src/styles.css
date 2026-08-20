@@ -2722,3 +2722,13 @@ button {
     max-width: none;
   }
 }
+
+/* O jogo parou o relógio sozinho: precisa estar escrito, senão parece travado. */
+.fala-ze__relogio,
+.blogueira__relogio {
+  margin: 0;
+  font-size: 11px;
+  font-style: normal !important;
+  color: var(--lima) !important;
+  letter-spacing: 0.2px;
+}

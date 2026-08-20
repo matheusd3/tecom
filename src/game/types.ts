@@ -139,6 +139,8 @@ export interface EstadoTutorial {
   passosVistos: TutorialPassoId[];
   /** O jogador dispensou as lições. O Seu Zé continua na loja até o dia 3. */
   pulado: boolean;
+  /** Passo exibido agora. Existe para o jogo não repausar a cada consulta. */
+  passoNaTela?: TutorialPassoId;
 }
 export type ShiftEventType = "influencer" | "couponLeak" | "powerSurge";
 export type RepairStatus = "queued" | "inProgress" | "ready" | "returning" | "completed";
@@ -367,6 +369,13 @@ export interface GameState {
   impulsoDeFluxo?: ImpulsoDeFluxo;
   /** O bêbado, enquanto estiver na loja. */
   bebado?: Bebado;
+  /**
+   * O relógio foi parado pelo JOGO para alguém falar, não pelo jogador.
+   * Só esta pausa o jogo desfaz sozinho, e só ela deixa as ações passarem.
+   */
+  pausadoPeloJogo?: boolean;
+  /** A blogueira já parou o relógio uma vez nesta partida. */
+  blogueiraJaPausou?: boolean;
 }
 
 /**

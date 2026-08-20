@@ -305,6 +305,7 @@ function JoystickMovimento({ onMove }: { onMove: (x: number, z: number) => void 
 function PedidoDaBlogueira(props: {
   nome: string;
   historia: string;
+  relogioParado: boolean;
   onAceitar: () => void;
   onRecusar: () => void;
 }) {
@@ -321,6 +322,11 @@ function PedidoDaBlogueira(props: {
       <p className="blogueira__custo">
         A bancada já está ocupada: aceitar empurra um conserto pago para trás.
       </p>
+      {props.relogioParado && (
+        <p className="blogueira__relogio">
+          O relógio está parado desta vez. Da próxima ela chega com a loja andando.
+        </p>
+      )}
       <div className="blogueira__acoes">
         <button className="btn btn--ativo" onClick={props.onAceitar}>
           Conserta pra ela
@@ -447,6 +453,7 @@ function FimDaTemporada(props: {
  */
 function FalaDoZe(props: {
   passo: { id: TutorialPassoId; fala: string[] };
+  relogioParado: boolean;
   onEntendi: (id: TutorialPassoId) => void;
   onPular: () => void;
 }) {
@@ -463,6 +470,9 @@ function FalaDoZe(props: {
       {props.passo.fala.map((paragrafo, i) => (
         <p className="fala-ze__texto" key={i}>{paragrafo}</p>
       ))}
+      {props.relogioParado && (
+        <p className="fala-ze__relogio">O relógio parou enquanto ele fala. Leia com calma.</p>
+      )}
       <div className="fala-ze__acoes">
         <button className="btn btn--ativo" onClick={() => props.onEntendi(props.passo.id)}>
           {despedida ? "Pode deixar, Seu Zé" : "Entendi"}
@@ -1016,6 +1026,7 @@ export function GameUI(props: GameUIProps) {
 
       {props.blogueira && emTurno && (
         <PedidoDaBlogueira
+          relogioParado={!!gameState.pausadoPeloJogo}
           nome={props.blogueira.nome}
           historia={props.blogueira.historia}
           onAceitar={props.onAceitarBlogueira}
@@ -1044,6 +1055,7 @@ export function GameUI(props: GameUIProps) {
 
       {props.passoTutorial && !gameState.arco?.fim && (
         <FalaDoZe
+          relogioParado={!!gameState.pausadoPeloJogo}
           passo={props.passoTutorial}
           onEntendi={props.onEntendiPasso}
           onPular={props.onPularTutorial}

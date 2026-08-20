@@ -129,8 +129,18 @@ Regras que não podem ser quebradas:
 
 - **Passo que o jogador já fez sozinho não aparece.** Quem descobriu o `E`
   antes de mandarem não leva aula sobre o `E`.
-- **O tutorial não pausa o turno.** Pausa é pausa (contrato 1 da Fase 5) e o
-  relógio parado é ferramenta do jogador, não do jogo.
+- **O tutorial PARA o relógio.** ⚠️ Corrigido em 20/08/2026, jogando: as falas
+  do Seu Zé caem no meio do turno, e ler enquanto a paciência da fila corre é
+  ler com prejuízo. A regra anterior ("o tutorial não pausa") vinha de uma
+  leitura errada do contrato 1 da Fase 5 — aquele contrato protege a pausa do
+  JOGADOR de ser burlada, e não impede o jogo de parar o próprio relógio.
+
+  As duas pausas passaram a ser coisas diferentes (`pausadoPeloJogo`). O jogo
+  só desfaz a que ele mesmo fez: se o jogador já tinha pausado, a pausa
+  continua sendo dele e responder o cartão não devolve o relógio. Encostar no
+  botão de pausa também transfere a posse — a partir daí o jogo não retoma
+  sozinho. E as ações que respondem aos cartões continuam valendo com o relógio
+  parado pelo jogo, senão os botões apareceriam mortos e pareceria travamento.
 - **Tem como pular.** Quem já jogou não passa por isso de novo — e o estado de
   "já vi o tutorial" vai no save, não em variável de sessão.
 
@@ -221,6 +231,11 @@ Medido em 5 partidas de 30 dias com jogador headless que contrata: sempre
 aceitar dá 5 vitórias com reputação média 100 e 14 clientes perdidos; nunca
 aceitar dá 5 vitórias com reputação 85 e 17 perdidos.
 
+**A blogueira para o relógio uma vez só.** Na primeira aparição da partida a
+regra dela é nova e precisa ser lida com calma. Da segunda em diante o relógio
+correndo É o custo da decisão: ela só chega com a bancada cheia, e deliberar de
+graça enquanto a fila congela tiraria justamente o que faz disso uma escolha.
+
 **Ponto a observar jogando:** nessa medição aceitar sai melhor nas duas contas,
 o que roça no "se aceitar for sempre certo, não é decisão". O custo existe e é
 a bancada — só não morde um jogador que contratou técnicos suficientes. Com um
@@ -305,7 +320,9 @@ torneira.
 
 1. **Seu Zé não é `seller-1` e não entra em `state.employees`.** Sem salário,
    sem folha, sem vaga de contratação.
-2. **O tutorial não pausa o turno.** Contrato 1 da Fase 5 continua valendo.
+2. **O tutorial PARA o relógio, e só o jogo desfaz a pausa que o jogo fez.**
+   Contrato 1 da Fase 5 continua valendo para a pausa do jogador: ela nunca é
+   burlada nem devolvida sem ele pedir. Ver a seção 3.
 3. **"Já vi o tutorial" e o progresso do arco vão no save**, no
    `criarInstantaneo()`. Estado de tutorial em variável de sessão volta a
    ensinar tudo de novo a cada recarga.
