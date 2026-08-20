@@ -473,6 +473,15 @@ export function GameUI(props: GameUIProps) {
     preferido && preferido.status === "waiting" ? preferido : aguardando[0];
   const idSelecionado = selecionado?.id;
 
+  // Aval pendente é a decisão mais urgente, então é o cliente dele que ocupa
+  // o cartão. Se o pedido for de alguém que já saiu, o cartão volta para o
+  // cliente selecionado em vez de sumir.
+  const pedidoDoCartao = props.pedidoDesconto ?? undefined;
+  const clienteDoPedido = pedidoDoCartao
+    ? gameState.customers.get(pedidoDoCartao.customerId)
+    : undefined;
+  const clienteDoCartao = clienteDoPedido ?? selecionado;
+
   // A meta é de lucro líquido. O núcleo já desconta compras, salários e custos
   // no valor de shiftProfit, então o HUD não precisa reconstruir a contabilidade.
   const lucroDoTurno = numero(gameState.shiftProfit);
@@ -815,28 +824,24 @@ export function GameUI(props: GameUIProps) {
           </section>
         )}
 
-        {/* Aprovar desconto é a decisão mais urgente na tela: vem antes do posto. */}
-        {emTurno && props.pedidoDesconto ? (
-          <AprovacaoDeDesconto
-            pedido={props.pedidoDesconto}
+        {/* Um cartão só. O aval pendente manda no conteúdo, mas o lugar na
+            tela é o mesmo: eram dois componentes para a mesma decisão e o
+            jogador não sabia qual estava vendo. */}
+        {emTurno && clienteDoCartao && (
+          <PostoAtendimento
+            cliente={clienteDoCartao}
+            produto={
+              clienteDoCartao.needsProduct
+                ? gameState.products.get(clienteDoCartao.needsProduct)
+                : undefined
+            }
+            pedido={pedidoDoCartao}
+            onVender={vender}
             onAprovar={props.onAprovarDesconto}
-            onRecusar={props.onRecusarDesconto}
+            onManterPreco={props.onRecusarDesconto}
+            onAceitarReparo={(id) => aplicarResultado(props.onAcceptRepair(id))}
+            onRecusar={(id) => aplicarResultado(props.onDecline(id))}
           />
-        ) : (
-          emTurno &&
-          (selecionado ? (
-            <PostoAtendimento
-              cliente={selecionado}
-              produto={
-                selecionado.needsProduct
-                  ? gameState.products.get(selecionado.needsProduct)
-                  : undefined
-              }
-              onVender={vender}
-              onAceitarReparo={(id) => aplicarResultado(props.onAcceptRepair(id))}
-              onRecusar={(id) => aplicarResultado(props.onDecline(id))}
-            />
-          ) : null)
         )}
       </main>
 
@@ -1209,18 +1214,32 @@ export function GameUI(props: GameUIProps) {
 
 /* ---------------------------------------------------------------- */
 
+/**
+ * O cartão do balcão. Ele absorveu o antigo cartão de aprovação: eram dois
+ * componentes para a MESMA decisão, com rótulos parecidos ("Aprovar ágio" e
+ * "Aprovar por"), e o jogador não sabia qual estava vendo. Agora existe um
+ * cartão só; quando há um pedido esperando aval, ele muda de moldura e de
+ * botão, mas continua sendo o mesmo lugar na tela.
+ */
 function PostoAtendimento({
   cliente,
   produto,
+  pedido,
   onVender,
+  onAprovar,
   onAceitarReparo,
   onRecusar,
+  onManterPreco,
 }: {
   cliente: Customer;
   produto?: Product;
+  /** Aval pendente sobre ESTE cliente, se houver. */
+  pedido?: PedidoDesconto;
   onVender: (cliente: Customer, preco: number) => void;
+  onAprovar: () => void;
   onAceitarReparo: (id: string) => void;
   onRecusar: (id: string) => void;
+  onManterPreco: () => void;
 }) {
   const paciencia = Math.round(cliente.patience);
   const classePaciencia =
@@ -1234,22 +1253,33 @@ function PostoAtendimento({
   // também quando ele topa pagar bem acima (ágio). Digitar qualquer outra
   // coisa só rendia recusa do núcleo.
   const abaixoDaVitrine = cliente.budget < precoVitrine;
-  // Mesma faixa de 8% que o núcleo usa para separar venda direta de ágio.
+  // Mesma faixa do núcleo, lida da constante compartilhada.
   const acimaDaVitrine = cliente.budget > precoVitrine * CUSTOMER_PRICE_TOLERANCE;
   const precoFechamento = abaixoDaVitrine || acimaDaVitrine ? cliente.budget : precoVitrine;
+  // Com aval pendente quem manda é o pedido: o preço vem dele, não do cálculo.
+  const precoFinal = pedido ? pedido.precoCliente : precoFechamento;
+  const ehAgio = pedido ? pedido.tipo === "premium" : acimaDaVitrine;
+  const ehDesconto = pedido ? pedido.tipo !== "premium" : abaixoDaVitrine;
   const diferenca =
-    precoVitrine > 0 ? Math.round(((precoFechamento - precoVitrine) / precoVitrine) * 100) : 0;
-  const rotuloVenda = abaixoDaVitrine
-    ? `Aprovar ${formatarMoeda(precoFechamento)}`
-    : acimaDaVitrine
-      ? `Aprovar ágio ${formatarMoeda(precoFechamento)}`
-      : `Vender por ${formatarMoeda(precoFechamento)}`;
+    precoVitrine > 0 ? Math.round(((precoFinal - precoVitrine) / precoVitrine) * 100) : 0;
+
+  const rotuloVenda = ehDesconto
+    ? `Aprovar ${formatarMoeda(precoFinal)}`
+    : ehAgio
+      ? `Aprovar ágio ${formatarMoeda(precoFinal)}`
+      : `Vender por ${formatarMoeda(precoFinal)}`;
 
   return (
     <section className={`palco__card posto posto--${cliente.urgency}`}>
       <header className="posto__topo">
         <div>
-          <p className="palco__etiqueta">No balcão</p>
+          {/* A etiqueta diz o que a tela espera de você: atender, ou decidir
+              um preço que o auxiliar não pode decidir sozinho. */}
+          <p className="palco__etiqueta">
+            {pedido
+              ? `${pedido.pedidoPor ?? "O atendente"} precisa da sua aprovação`
+              : "No balcão"}
+          </p>
           <h2 className="palco__titulo">{cliente.name}</h2>
         </div>
         <span className={`urgencia urgencia--${cliente.urgency}`}>
@@ -1305,7 +1335,7 @@ function PostoAtendimento({
               className="btn btn--sucesso btn--fechar"
               disabled={semEstoque}
               title={semEstoque ? "Sem estoque na prateleira" : undefined}
-              onClick={() => onVender(cliente, precoFechamento)}
+              onClick={() => (pedido ? onAprovar() : onVender(cliente, precoFinal))}
             >
               {rotuloVenda}
               {diferenca !== 0 && (
@@ -1315,9 +1345,17 @@ function PostoAtendimento({
                 </span>
               )}
             </button>
-            <button className="btn" onClick={() => onRecusar(cliente.id)}>
-              Dispensar
-            </button>
+            {/* Com aval pendente, recusar é manter o preço — o cliente não é
+                dispensado. Sem aval, o segundo botão continua sendo dispensar. */}
+            {pedido ? (
+              <button className="btn" onClick={onManterPreco}>
+                {ehAgio ? "Manter vitrine" : "Manter preço"}
+              </button>
+            ) : (
+              <button className="btn" onClick={() => onRecusar(cliente.id)}>
+                Dispensar
+              </button>
+            )}
           </div>
         </>
       )}
@@ -1347,67 +1385,6 @@ function PostoAtendimento({
           </div>
         </>
       )}
-    </section>
-  );
-}
-
-function AprovacaoDeDesconto({
-  pedido,
-  onAprovar,
-  onRecusar,
-}: {
-  pedido: PedidoDesconto;
-  onAprovar: () => void;
-  onRecusar: () => void;
-}) {
-  const agio = pedido.tipo === "premium";
-  const desconto = pedido.precoVitrine - pedido.precoCliente;
-  const percentual =
-    pedido.precoVitrine > 0 ? (desconto / pedido.precoVitrine) * 100 : 0;
-
-  return (
-    <section className="palco__card aprovacao">
-      <header className="posto__topo">
-        <div>
-          <p className="palco__etiqueta">Precisa da sua aprovação</p>
-          <h2 className="palco__titulo">{agio ? "Ágio" : "Desconto"} no {pedido.produto}</h2>
-        </div>
-        <span className="urgencia urgencia--high">{agio ? "+" : "-"}{Math.round(Math.abs(percentual))}%</span>
-      </header>
-
-      <p className="palco__texto">
-        {pedido.pedidoPor
-          ? `${pedido.pedidoPor} está no balcão com ${pedido.customerName}, ${agio ? "que aceita pagar acima da vitrine" : "que não paga o preço de vitrine"}, e espera seu aval.`
-          : `${pedido.customerName} ${agio ? "aceita pagar acima da vitrine" : "não paga o preço de vitrine"}. O atendente está com o item na mão, esperando você decidir.`}
-      </p>
-
-      <div className="posto__pedido">
-        <div className="kpi">
-          <span className="kpi__rotulo">Preço de vitrine</span>
-          <strong className="kpi__valor">{formatarMoeda(pedido.precoVitrine)}</strong>
-        </div>
-        <div className="kpi">
-          <span className="kpi__rotulo">O cliente paga</span>
-          <strong className="kpi__valor valor--alerta">
-            {formatarMoeda(pedido.precoCliente)}
-          </strong>
-        </div>
-        <div className="kpi">
-          <span className="kpi__rotulo">{agio ? "Você ganha a mais" : "Você abre mão de"}</span>
-          <strong className={`kpi__valor ${agio ? "valor--positivo" : "valor--negativo"}`}>
-            {formatarMoeda(Math.abs(desconto))}
-          </strong>
-        </div>
-      </div>
-
-      <div className="posto__acoes">
-        <button className="btn btn--gigante btn--sucesso" onClick={onAprovar}>
-          Aprovar por {formatarMoeda(pedido.precoCliente)}
-        </button>
-        <button className="btn" onClick={onRecusar}>
-          {agio ? "Manter vitrine" : "Manter preço"}
-        </button>
-      </div>
     </section>
   );
 }

@@ -32,6 +32,14 @@ const DIAS_DO_MES = 30;
  * e a fila era um enfeite sem risco. Em 0,95 o cliente tranquilo aguenta ~58 a
  * 105 s e o apressado bem menos, então deixar a fila crescer passa a custar.
  */
+/**
+ * Paciência abaixo da qual o auxiliar para de esperar aval de ÁGIO e fecha
+ * pelo preço de vitrine. A assimetria é o ponto: desconto ele não pode dar
+ * sem permissão, porque venderia abaixo da vitrine; ágio é dinheiro EXTRA, e
+ * segurar a venda esperando resposta troca alguns reais de upside pelo
+ * cliente inteiro. 18% dos compradores caíam nessa armadilha.
+ */
+const PACIENCIA_PARA_FECHAR_SEM_AVAL = 30;
 const CUSTOMER_PATIENCE_PER_SECOND = 0.95;
 /**
  * Chegada de cliente. O intervalo aperta com o dia porque a loja precisa, em
@@ -854,7 +862,14 @@ export class GameWorld {
     const vendaDireta = Array.from(this.state.customers.values()).find((customer) => {
       if (!atendivel(customer) || !customer.needsProduct) return false;
       const product = this.state.products.get(customer.needsProduct);
-       return !!product && product.stock > 0 && customer.budget >= product.sellingPrice && customer.budget <= product.sellingPrice * CUSTOMER_PRICE_TOLERANCE;
+      if (!product || product.stock <= 0 || customer.budget < product.sellingPrice) return false;
+      // Dentro da faixa ele fecha na hora. Acima dela é caso de ágio e ele
+      // pergunta — mas só enquanto o cliente tem paciência para esperar; no
+      // fim da linha, fechar pela vitrine é sempre melhor que perder a venda.
+      return (
+        customer.budget <= product.sellingPrice * CUSTOMER_PRICE_TOLERANCE ||
+        customer.patience < PACIENCIA_PARA_FECHAR_SEM_AVAL
+      );
     });
     if (vendaDireta?.needsProduct) {
       const product = this.state.products.get(vendaDireta.needsProduct)!;
