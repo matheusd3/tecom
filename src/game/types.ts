@@ -62,6 +62,49 @@ export const REPUTACAO_DO_OBJETIVO = 70;
 /** Quanto o filho oferece pela loja. É pouco de propósito. */
 export const OFERTA_DO_FILHO = 3_000;
 
+// ------------------------------------------------- eventos do degrau 1
+
+/**
+ * Movimento extra ganho na porta. Hoje só a blogueira concede, e é o que faz
+ * dela a primeira decisão do jogo cuja consequência não cabe em 120 segundos:
+ * o preço é pago hoje, na bancada, e o retorno vem nos turnos seguintes.
+ */
+export interface ImpulsoDeFluxo {
+  /** Turnos que ainda rendem gente extra. */
+  diasRestantes: number;
+  /** Multiplica o intervalo entre chegadas. Menor = mais movimento. */
+  fator: number;
+  origem: "blogueira";
+}
+
+/**
+ * O bêbado do bairro. Não compra nada e não entra na fila: ele fica no meio do
+ * salão atrapalhando, e a paciência de quem espera cai mais rápido enquanto
+ * ele estiver lá. Sai quando o jogador chega perto e manda sair.
+ *
+ * É o primeiro motivo de andar pela loja que não é carregar coisa — todo o
+ * resto (buscar, levar, repor) é logística.
+ */
+export interface Bebado {
+  chegouEm: number;
+  /** Vai embora sozinho neste instante, se ninguém o expulsar antes. */
+  vaiEmboraEm: number;
+}
+
+/** Quanto mais rápido a paciência cai com o bêbado no salão. */
+export const BEBADO_PRESSA = 1.8;
+/** Quanto tempo ele fica se ninguém o enxotar. */
+export const BEBADO_DURACAO = 45;
+/** Distância para conseguir mandar ele sair. */
+export const ALCANCE_DO_BEBADO = 2.2;
+
+/** Dias em que o movimento continua alto depois do conserto da blogueira. */
+export const DIAS_DE_IMPULSO = 3;
+/** Intervalo entre chegadas multiplicado por isto enquanto o impulso dura. */
+export const FATOR_DO_IMPULSO = 0.62;
+/** Reputação perdida quando o jogador recusa o conserto de graça. */
+export const REPUTACAO_POR_RECUSAR_BLOGUEIRA = 6;
+
 export type FimDoArco =
   | "vitoria"
   | "derrotaDivida"
@@ -211,7 +254,12 @@ export interface Customer {
   story: string;
   urgency: "low" | "medium" | "high";
   /** Clientes excêntricos deixam consequências mais claras no turno. */
-  trait?: "influencer" | "couponHunter" | "panicked";
+  trait?: "couponHunter" | "panicked" | "blogueira";
+  /**
+   * A blogueira não paga: ela pede o conserto de graça e o jogador decide.
+   * Enquanto for `true` ela está esperando resposta no balcão.
+   */
+  pedeDeGraca?: boolean;
 }
 
 export interface ShiftEvent {
@@ -245,6 +293,8 @@ export interface RepairOrder {
   profit: number;
   completed: boolean;
   status: RepairStatus;
+  /** Conserto da blogueira: não fatura, paga em movimento quando fica pronto. */
+  gratuito?: boolean;
 }
 
 /**
@@ -313,6 +363,10 @@ export interface GameState {
   tutorial: EstadoTutorial;
   /** A temporada: dívida, fim e a oferta do filho. */
   arco: EstadoArco;
+  /** Movimento extra herdado de turnos anteriores. */
+  impulsoDeFluxo?: ImpulsoDeFluxo;
+  /** O bêbado, enquanto estiver na loja. */
+  bebado?: Bebado;
 }
 
 /**
@@ -392,7 +446,7 @@ export interface GameHandle {
  * um retrato de versão diferente é recusado inteiro, porque meio estado
  * carregado é pior que começar de novo.
  */
-export const VERSAO_SAVE = 3;
+export const VERSAO_SAVE = 4;
 
 /**
  * O `GameState` com os `Map` desmontados em pares.

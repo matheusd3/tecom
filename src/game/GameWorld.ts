@@ -39,6 +39,12 @@ import {
   REPUTACAO_DO_OBJETIVO,
   valorDaParcela,
   VERSAO_SAVE,
+  ALCANCE_DO_BEBADO,
+  BEBADO_DURACAO,
+  BEBADO_PRESSA,
+  DIAS_DE_IMPULSO,
+  FATOR_DO_IMPULSO,
+  REPUTACAO_POR_RECUSAR_BLOGUEIRA,
 } from "./types";
 
 /**
@@ -267,6 +273,10 @@ export class GameWorld {
    * contam. É o sinal que separa "faltou produto" de "faltou perna".
    */
   private shiftPerdidosPorEspera = 0;
+  /** Um bêbado por turno; zera no startShift. */
+  private bebadoJaVeioNesteTurno = false;
+  /** Uma blogueira por turno, pelo mesmo motivo. */
+  private blogueiraJaVeioNesteTurno = false;
 
   constructor() {
     this.state = this.createInitialState();
@@ -284,6 +294,7 @@ export class GameWorld {
     this.processRepairs();
     this.processarBebedouro();
     this.processarCafe();
+    this.processarBebado(elapsed);
     this.runSupportAttendant(elapsed);
     this.removeDepartedCustomers();
         // Pedidos pendentes morrem com o cliente que os motivou. O primeiro continua
@@ -415,6 +426,9 @@ export class GameWorld {
     // Zerado aqui e lido no fechamento: o diagnóstico é sempre do turno que
     // acabou, não do acumulado da partida.
     this.shiftPerdidosPorEspera = 0;
+    this.bebadoJaVeioNesteTurno = false;
+    this.blogueiraJaVeioNesteTurno = false;
+    this.state.bebado = undefined;
     this.state.activeEvent = this.rollShiftEvent();
     if (this.state.activeEvent) this.addHighlight(this.state.activeEvent.description);
     return { ok: true, message: `Turno ${this.state.day} iniciado.` };
@@ -650,6 +664,11 @@ export class GameWorld {
     if (!customer?.needsService || customer.status !== "waiting") {
       return { ok: false, message: "Esse reparo não está disponível." };
     }
+    // Favor ainda não respondido não vira ordem de serviço: quem decide se a
+    // bancada trabalha de graça é o dono, não a rotina do balcão.
+    if (customer.pedeDeGraca) {
+      return { ok: false, message: `${customer.name} está esperando uma resposta sobre o conserto de graça.` };
+    }
     if (!this.chegouAoBalcao(customer)) {
       return { ok: false, message: `${customer.name} ainda está entrando na loja.` };
     }
@@ -669,15 +688,17 @@ export class GameWorld {
     }
     const technician = this.availableEmployee("technician");
     const skill = technician?.skill ?? 50;
-    const price = 180 + skill * 1.5;
-    const cost = price * 0.2;
+    // Favor combinado é favor: o aparelho dela ocupa a bancada e não fatura.
+    const gratuito = customer.trait === "blogueira";
+    const price = gratuito ? 0 : 180 + skill * 1.5;
+    const cost = gratuito ? 0 : price * 0.2;
     const surgeDelay = this.state.activeEvent?.type === "powerSurge" && this.consumeEventUse("powerSurge") ? 18 : 0;
     const duration = this.duracaoReparo(this.duracaoDoFuncionario(technician, Math.max(18, 58 - skill * 0.3) + surgeDelay));
     const repair: RepairOrder = {
       id: `repair-${Math.floor(this.state.time * 1000)}`, customerId: customer.id,
       serviceType: customer.needsService, technicianId: technician?.id, startTime: this.state.time,
       endTime: undefined, price, cost, profit: price - cost, completed: false,
-      status: "queued",
+      status: "queued", gratuito,
     };
     this.state.repairs.push(repair);
     customer.status = "repairing";
@@ -1023,6 +1044,7 @@ export class GameWorld {
     if (this.customerSpawnTimer < this.nextCustomerSpawn) return;
     this.customerSpawnTimer = 0;
     this.nextCustomerSpawn = this.proximoSpawnCliente();
+    if (this.tentarChegadaDaBlogueira()) return;
     const productTypes: ProductType[] = ["notebook", "mouse", "keyboard", "monitor", "headset", "webcam", "ssd", "ram"];
     const wantsProduct = Math.random() < 0.7;
     const type = productTypes[Math.floor(Math.random() * productTypes.length)];
@@ -1030,9 +1052,8 @@ export class GameWorld {
     const id = `customer-${Math.floor(this.state.time * 1000)}-${Math.floor(Math.random() * 10_000)}`;
     const trait = this.nextCustomerTrait();
     const couponDiscount = this.state.activeEvent?.type === "couponLeak" && wantsProduct && this.consumeEventUse("couponLeak") ? 0.12 : 0;
-    const influencerBoost = trait === "influencer" ? 0.12 : 0;
     this.customerSequence++;
-    const name = trait === "influencer" ? "Nina do TechTok" : `${CUSTOMER_NAMES[(this.customerSequence - 1) % CUSTOMER_NAMES.length]} #${this.customerSequence}`;
+    const name = `${CUSTOMER_NAMES[(this.customerSequence - 1) % CUSTOMER_NAMES.length]} #${this.customerSequence}`;
     this.state.customers.set(id, {
       id, name, satisfaction: 55,
       needsProduct: wantsProduct ? type : undefined,
@@ -1043,7 +1064,7 @@ export class GameWorld {
       // pedir 1e+106 que o cliente aceitava. Agora subir o preço afasta
       // compradores, que é o trade-off que a decisão de preço deveria ter.
       budget: wantsProduct
-        ? Math.round(product.basePrice * (1 - couponDiscount + influencerBoost) * this.randomBetween(0.95, 1.6) * 100) / 100
+        ? Math.round(product.basePrice * (1 - couponDiscount) * this.randomBetween(0.95, 1.6) * 100) / 100
         : 0,
       patience: trait === "panicked" ? this.randomBetween(38, 62) : this.randomBetween(55, 100), arrivalTime: this.state.time, status: "waiting",
       urgency: Math.random() < 0.22 ? "high" : Math.random() < 0.55 ? "medium" : "low",
@@ -1057,7 +1078,12 @@ export class GameWorld {
       if (customer.status !== "waiting") continue;
       const urgencyMultiplier = customer.urgency === "high" ? 1.65 : customer.urgency === "medium" ? 1.2 : 1;
       const cafeAtivo = this.temUpgrade("cafeDaEspera") && this.state.nivelDoCafe > 0;
-      customer.patience = Math.max(0, customer.patience - elapsed * CUSTOMER_PATIENCE_PER_SECOND * urgencyMultiplier * (cafeAtivo ? 0.75 : 1));
+      // Ninguém espera direito com um bêbado gritando no meio do salão.
+      const bebado = this.state.bebado ? BEBADO_PRESSA : 1;
+      customer.patience = Math.max(
+        0,
+        customer.patience - elapsed * CUSTOMER_PATIENCE_PER_SECOND * urgencyMultiplier * (cafeAtivo ? 0.75 : 1) * bebado
+      );
       if (customer.patience > 0) continue;
       this.shiftPerdidosPorEspera++;
       this.loseCustomer(customer, "cansou de esperar");
@@ -1068,6 +1094,9 @@ export class GameWorld {
     for (const repair of this.state.repairs) {
       if (repair.status !== "inProgress" || !repair.endTime || repair.endTime > this.state.time) continue;
       repair.status = "ready";
+      // O conserto da blogueira não rende dinheiro; rende movimento, e só
+      // quando FICA PRONTO. Aceitar e deixar o aparelho na pilha não paga nada.
+      if (repair.gratuito) this.pagarOFavorDaBlogueira();
       const technician = repair.technicianId ? this.state.employees.get(repair.technicianId) : undefined;
       if (technician) {
         technician.isBusy = false;
@@ -1225,7 +1254,8 @@ export class GameWorld {
     }
 
     const waitingRepair = Array.from(this.state.customers.values()).find(
-      (customer) => atendivel(customer) && customer.needsService
+      // `pedeDeGraca` fica de fora: o auxiliar não decide favor da casa.
+      (customer) => atendivel(customer) && customer.needsService && !customer.pedeDeGraca
     );
     if (waitingRepair) {
       alvosTomados.add(`cliente:${waitingRepair.id}`);
@@ -1354,6 +1384,16 @@ export class GameWorld {
       reputationChange: this.state.reputation - this.shiftStartReputation,
       goalReached, topOpportunity: this.getOpportunities()[0], highlights: [...this.shiftHighlights],
     };
+    // O bêbado não atravessa o fechamento; o impulso da blogueira sim, e é
+    // justamente por isso que ele é a consequência que não cabe no turno.
+    this.state.bebado = undefined;
+    if (this.state.impulsoDeFluxo) {
+      this.state.impulsoDeFluxo.diasRestantes--;
+      if (this.state.impulsoDeFluxo.diasRestantes <= 0) {
+        this.state.impulsoDeFluxo = undefined;
+        this.addHighlight("O vídeo da blogueira esfriou: o movimento voltou ao normal.");
+      }
+    }
     this.state.phase = "summary";
     this.state.isPaused = true;
     this.state.day++;
@@ -1465,7 +1505,108 @@ export class GameWorld {
     return { ok: true, message: "Oferta recusada. A loja continua sua." };
   }
 
-  /** Quantos dias faltam para o fim da temporada. */
+  // ------------------------------------------------ blogueira e bêbado
+
+  /**
+   * A blogueira esperando resposta no balcão, se houver.
+   *
+   * Ela é a versão com dente do evento "TechTok na fila", que disparava em 28%
+   * dos turnos e só dava +4 de reputação numa venda comum.
+   */
+  public blogueiraNoBalcao(): Customer | undefined {
+    for (const cliente of this.state.customers.values()) {
+      if (cliente.pedeDeGraca && cliente.status === "waiting") return cliente;
+    }
+    return undefined;
+  }
+
+  /**
+   * Aceita consertar de graça. Ela vira um cliente de reparo normal — o
+   * jogador ainda precisa receber o aparelho no balcão e levar até a bancada.
+   *
+   * O preço da decisão não é o desconto: é a bancada. Ela só aparece com
+   * serviço já em andamento, então dizer sim empurra um reparo PAGO para trás.
+   */
+  public aceitarBlogueira(): ActionResult {
+    if (this.pausado()) return TURNO_PAUSADO();
+    const cliente = this.blogueiraNoBalcao();
+    if (!cliente) return { ok: false, message: "Ninguém está pedindo favor agora." };
+    cliente.pedeDeGraca = false;
+    cliente.patience = Math.min(100, cliente.patience + 25);
+    this.addHighlight(`${cliente.name} vai ser atendida de graça. Receba o aparelho no balcão.`);
+    return { ok: true, message: "Combinado. Receba o aparelho no balcão e leve para a bancada." };
+  }
+
+  /** Recusa. Não custa bancada — custa reputação, porque ela comenta. */
+  public recusarBlogueira(): ActionResult {
+    if (this.pausado()) return TURNO_PAUSADO();
+    const cliente = this.blogueiraNoBalcao();
+    if (!cliente) return { ok: false, message: "Ninguém está pedindo favor agora." };
+    cliente.pedeDeGraca = false;
+    cliente.status = "leaving";
+    cliente.departureTime = this.state.time + 2;
+    cliente.satisfaction = 20;
+    this.state.reputation = Math.max(0, this.state.reputation - REPUTACAO_POR_RECUSAR_BLOGUEIRA);
+    this.addHighlight(
+      `${cliente.name} saiu sem o conserto e contou pra internet: -${REPUTACAO_POR_RECUSAR_BLOGUEIRA} de reputação.`
+    );
+    return { ok: true, message: "Você recusou o favor." };
+  }
+
+  /** O favor pago: movimento por alguns dias, e não dinheiro hoje. */
+  private pagarOFavorDaBlogueira(): void {
+    this.state.impulsoDeFluxo = {
+      diasRestantes: DIAS_DE_IMPULSO,
+      fator: FATOR_DO_IMPULSO,
+      origem: "blogueira",
+    };
+    this.state.reputation = Math.min(100, this.state.reputation + 8);
+    this.addHighlight(
+      `O vídeo do conserto viralizou: +8 de reputação e mais movimento pelos próximos ${DIAS_DE_IMPULSO} dias.`
+    );
+  }
+
+  /** Ele chega, atrapalha e vai embora sozinho se ninguém o enxotar. */
+  private processarBebado(elapsed: number): void {
+    void elapsed;
+    if (this.state.bebado) {
+      if (this.state.time >= this.state.bebado.vaiEmboraEm) {
+        this.state.bebado = undefined;
+        this.addHighlight("O bêbado se cansou e saiu sozinho — depois de estragar a espera de todo mundo.");
+      }
+      return;
+    }
+    // Uma aparição por turno, e nunca no fim, quando não daria tempo de reagir.
+    if (this.bebadoJaVeioNesteTurno || this.state.shiftTimeRemaining < 45) return;
+    if (Math.random() > 0.0022) return;
+    this.bebadoJaVeioNesteTurno = true;
+    this.state.bebado = { chegouEm: this.state.time, vaiEmboraEm: this.state.time + BEBADO_DURACAO };
+    this.addHighlight("Um bêbado entrou na loja. Chegue perto e mande ele sair antes que a fila desista.");
+  }
+
+  /**
+   * Mandar o bêbado sair. Quem confere a distância é a cena (é ela que tem as
+   * posições); aqui só se resolve o efeito.
+   */
+  public expulsarBebado(): ActionResult {
+    if (this.pausado()) return TURNO_PAUSADO();
+    if (!this.state.bebado) return { ok: false, message: "Não tem ninguém para expulsar." };
+    this.state.bebado = undefined;
+    this.state.reputation = Math.min(100, this.state.reputation + 2);
+    this.addHighlight("Você pôs o bêbado para fora. A fila respirou.");
+    return { ok: true, message: "Bêbado convidado a se retirar. +2 de reputação." };
+  }
+
+  public temBebado(): boolean {
+    return !!this.state.bebado;
+  }
+
+  /** Alcance para mandar o bêbado sair, lido pela cena. */
+  public alcanceDoBebado(): number {
+    return ALCANCE_DO_BEBADO;
+  }
+
+  /** Quantos dias faltam para a temporada acabar. */
   public diasRestantes(): number {
     return Math.max(0, DIAS_DO_ARCO - this.state.day + 1);
   }
@@ -1644,7 +1785,9 @@ export class GameWorld {
     // O letreiro corta um terço da espera, em cima do ritmo do dia — antes ele
     // era um valor fixo que, dias adiante, chegava a ser mais lento que o normal.
     const fator = this.temUpgrade("letreiroRua") ? 0.68 : 1;
-    return this.randomBetween(min * fator, max * fator);
+    // O vídeo da blogueira ainda está rodando: mais gente na porta.
+    const impulso = this.state.impulsoDeFluxo ? this.state.impulsoDeFluxo.fator : 1;
+    return this.randomBetween(min * fator * impulso, max * fator * impulso);
   }
   /** Camada mais alta do catálogo que o dia atual libera. */
   private tierLiberado(): number {
@@ -1791,28 +1934,70 @@ export class GameWorld {
   }
 
   private nextCustomerTrait(): Customer["trait"] {
-    if (this.state.activeEvent?.type === "influencer" && this.state.activeEvent.remainingUses > 0) {
-      this.consumeEventUse("influencer");
-      return "influencer";
-    }
+    // O traço "influencer" saiu do sorteio comum: a criadora agora chega pelo
+    // `tentarChegadaDaBlogueira`, com aparelho quebrado e um pedido. Dar +4 de
+    // reputação numa venda qualquer era o "sem fazer quase nada" do FASE6 §5.1.
     const roll = Math.random();
     if (roll < 0.18) return "panicked";
     if (roll < 0.32) return "couponHunter";
     return undefined;
   }
 
+  /**
+   * A blogueira só entra com a bancada OCUPADA.
+   *
+   * É o que impede "aceitar" de ser sempre certo: com a assistência livre, o
+   * conserto de graça não custaria nada e a decisão seria de mentira. Com
+   * serviço em andamento, dizer sim empurra um reparo pago para trás — e pode
+   * empurrá-lo para depois do fechamento.
+   */
+  private tentarChegadaDaBlogueira(): boolean {
+    if (this.blogueiraJaVeioNesteTurno) return false;
+    if (this.state.activeEvent?.type !== "influencer" || this.state.activeEvent.remainingUses <= 0) return false;
+    const bancadaOcupada = this.state.repairs.some(
+      (reparo) => reparo.status === "queued" || reparo.status === "inProgress"
+    );
+    if (!bancadaOcupada) return false;
+
+    this.consumeEventUse("influencer");
+    this.blogueiraJaVeioNesteTurno = true;
+    const id = `blogueira-${Math.floor(this.state.time * 1000)}`;
+    this.state.customers.set(id, {
+      id,
+      name: "Nina do TechTok",
+      satisfaction: 60,
+      needsService: "repair",
+      // Ela não paga: o orçamento existe só para não quebrar quem lê o campo.
+      budget: 0,
+      patience: 100,
+      arrivalTime: this.state.time,
+      status: "waiting",
+      story: "Meu celular morreu no meio de uma gravação. Conserta pra mim? Eu mostro a loja pros meus seguidores.",
+      urgency: "medium",
+      trait: "blogueira",
+      pedeDeGraca: true,
+    });
+    this.addHighlight("Nina do TechTok chegou com o celular quebrado — e não veio pagar.");
+    return true;
+  }
+
   private customerStory(base: string, trait: Customer["trait"], couponAffected: boolean): string {
-    if (trait === "influencer") return `${base} Ela já abriu a câmera: "se der certo, viraliza".`;
     if (trait === "panicked") return `${base} Está olhando o relógio a cada cinco segundos.`;
     if (couponAffected || trait === "couponHunter") return `${base} Chegou com um print de cupom e confiança demais.`;
     return base;
   }
 
+  /**
+   * Traços que mudam o desfecho de uma venda.
+   *
+   * O "influencer" saiu daqui: dar +4 de reputação numa venda comum era o que
+   * o FASE6 §5.1 chamou de "sem fazer quase nada". A criadora virou decisão
+   * (`tentarChegadaDaBlogueira`) e paga em movimento, não em número solto.
+   */
   private applyCustomerTrait(customer: Customer, action: "sale" | "repair"): string {
-    if (customer.trait !== "influencer" || action !== "sale") return "";
-    this.state.reputation = Math.min(100, this.state.reputation + 4);
-    this.addHighlight("Nina do TechTok aprovou a compra: +4 de reputação e uma fila mais animada.");
-    return " Nina do TechTok postou a compra: +4 de reputação!";
+    void customer;
+    void action;
+    return "";
   }
 
   private loseCustomer(customer: Customer, reason: string): void {
@@ -1821,7 +2006,8 @@ export class GameWorld {
     customer.departureTime = this.state.time + 2;
     if (customer.needsProduct) this.state.missedSales++;
     else this.state.missedRepairs++;
-    const penalty = customer.trait === "influencer" ? 7 : customer.urgency === "high" ? 4 : 2;
+    // Perder a blogueira dói mais: ela tem plateia, e a loja apanha em público.
+    const penalty = customer.trait === "blogueira" ? 7 : customer.urgency === "high" ? 4 : 2;
     this.state.reputation = Math.max(0, this.state.reputation - penalty);
     this.addHighlight(`${customer.name} ${reason}: reputação ${penalty > 0 ? `-${penalty}` : "inalterada"}.`);
   }

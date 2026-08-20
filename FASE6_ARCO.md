@@ -200,7 +200,7 @@ primeiro número a mexer se a temporada ficar frustrante demais.
 Cinco ideias novas, ordenadas por degrau. Cada uma destrava a seguinte — é isso
 que separa "mais conteúdo" de "conteúdo que dura".
 
-### 5.1 A blogueira — degrau 1 (dias 1 a 8)
+### 5.1 A blogueira — degrau 1 ✅ FEITO 20/08/2026
 
 Chega com o celular quebrado e pede o conserto de graça. Aceitar custa tempo de
 bancada e peça; recusar não custa nada hoje.
@@ -210,11 +210,23 @@ hoje tudo resolve dentro do turno. Já existe o evento `influencer` ("TechTok na
 fila") disparando em 28% dos turnos sem fazer quase nada: esta é a versão dele
 com dente.
 
-**Cuidado de desenho:** se aceitar for sempre certo, não é decisão. Ela tem que
-aparecer também em dia ruim — bancada cheia — para que o conserto de graça
-empurre um reparo pago para depois do fechamento.
+**Como ficou:** ela só entra com a bancada JÁ ocupada — é a regra que impede
+"aceitar" de ser de graça. Aceitar não fatura nada e ocupa a bancada; o retorno
+vem quando o aparelho fica PRONTO, em três dias de movimento extra
+(`FATOR_DO_IMPULSO` = 0,62) e +8 de reputação. Recusar custa 6 de reputação na
+hora. Enquanto ela espera resposta, nem o jogador nem o auxiliar podem receber
+o aparelho: favor da casa não é decisão do balcão.
 
-### 5.2 O bêbado — degrau 1 (dias 1 a 8)
+Medido em 5 partidas de 30 dias com jogador headless que contrata: sempre
+aceitar dá 5 vitórias com reputação média 100 e 14 clientes perdidos; nunca
+aceitar dá 5 vitórias com reputação 85 e 17 perdidos.
+
+**Ponto a observar jogando:** nessa medição aceitar sai melhor nas duas contas,
+o que roça no "se aceitar for sempre certo, não é decisão". O custo existe e é
+a bancada — só não morde um jogador que contratou técnicos suficientes. Com um
+técnico só ele deve doer de verdade. É a primeira coisa a conferir na mão.
+
+### 5.2 O bêbado — degrau 1 ✅ FEITO 20/08/2026
 
 Entra, atrapalha, derruba a paciência de quem está na fila. Sai quando o
 jogador chega perto e manda sair.
@@ -223,9 +235,20 @@ jogador chega perto e manda sair.
 é o primeiro motivo de andar que não é carregar coisa. Barato de fazer e muda o
 ritmo do turno.
 
+**Como ficou:** enquanto ele está no salão a paciência da fila cai 1,8× mais
+rápido — medido: 9,5 pontos perdidos em 10 s sem ele, 17,1 com ele. Some sozinho
+em 45 s, ou quando o jogador chega a 2,2 de distância e aperta E (+2 de
+reputação). Um por turno, e nunca nos últimos 45 s, quando não daria tempo de
+atravessar a loja.
+
 **Armadilha da cena:** cliente não colide, o jogador sim (`FASE3` §5.4). O
 bêbado segue a regra dos clientes; a interação é por distância ao boneco, como
-`estacaoEm` faz com os móveis.
+`estacaoEm` faz com os móveis. Quem mede a distância é a CENA
+(`bebadoAoAlcance`), não o núcleo — o núcleo não sabe onde ninguém está.
+
+O `E` resolve o bêbado ANTES de qualquer estação. Se o jogador atravessou a
+loja até ele, é isso que a tecla tem de fazer; deixar a estação ganhar faria o
+`E` "não funcionar" bem no momento em que ele parece mais óbvio.
 
 ### 5.3 O segurança — degrau 2 (a partir do dia ~10)
 

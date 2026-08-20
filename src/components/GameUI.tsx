@@ -68,6 +68,10 @@ interface GameUIProps {
   /** Fala do Seu Zé para a situação de agora. */
   passoTutorial: { id: TutorialPassoId; fala: string[] } | null;
   onEntendiPasso: (id: TutorialPassoId) => void;
+  /** Blogueira esperando resposta sobre o conserto de graça. */
+  blogueira: { nome: string; historia: string } | null;
+  onAceitarBlogueira: () => void;
+  onRecusarBlogueira: () => void;
   onAceitarOferta: () => void;
   onRecusarOferta: () => void;
   onPularTutorial: () => void;
@@ -287,6 +291,45 @@ function JoystickMovimento({ onMove }: { onMove: (x: number, z: number) => void 
       />
       <span className="joystick__rotulo">MOVER</span>
     </div>
+  );
+}
+
+/**
+ * A blogueira pedindo o conserto de graça.
+ *
+ * Ela só chega com a bancada já ocupada, então o custo de dizer sim não é o
+ * desconto: é o reparo PAGO que vai para trás na fila. E o retorno não cabe no
+ * turno — vem em movimento nos dias seguintes, e só quando o aparelho ficar
+ * pronto.
+ */
+function PedidoDaBlogueira(props: {
+  nome: string;
+  historia: string;
+  onAceitar: () => void;
+  onRecusar: () => void;
+}) {
+  return (
+    <aside className="blogueira">
+      <div className="blogueira__quem">
+        <span className="blogueira__avatar" aria-hidden="true">▶</span>
+        <div>
+          <strong>{props.nome}</strong>
+          <span>quer o conserto de graça</span>
+        </div>
+      </div>
+      <p>"{props.historia}"</p>
+      <p className="blogueira__custo">
+        A bancada já está ocupada: aceitar empurra um conserto pago para trás.
+      </p>
+      <div className="blogueira__acoes">
+        <button className="btn btn--ativo" onClick={props.onAceitar}>
+          Conserta pra ela
+        </button>
+        <button className="btn" onClick={props.onRecusar}>
+          Hoje não dá
+        </button>
+      </div>
+    </aside>
   );
 }
 
@@ -970,6 +1013,22 @@ export function GameUI(props: GameUIProps) {
           </span>
         )}
       </div>
+
+      {props.blogueira && emTurno && (
+        <PedidoDaBlogueira
+          nome={props.blogueira.nome}
+          historia={props.blogueira.historia}
+          onAceitar={props.onAceitarBlogueira}
+          onRecusar={props.onRecusarBlogueira}
+        />
+      )}
+
+      {gameState.bebado && emTurno && (
+        <div className="aviso-bebado" role="status">
+          <strong>Tem um bêbado no salão.</strong> Chegue perto dele e aperte E
+          para mandar sair — a fila está perdendo a paciência mais rápido.
+        </div>
+      )}
 
       {gameState.arco?.ofertaDoFilho && fase === "summary" && !gameState.arco.fim && (
         <OfertaDoFilho

@@ -31,6 +31,7 @@ import { criarJogador } from "./store/player";
 import { criarMultidao } from "./store/crowd";
 import { criarEquipe } from "./store/staff";
 import { criarMentor } from "./store/mentor";
+import { criarBebado } from "./store/bebado";
 import { CORES_PRODUTO, PALETA, cor } from "./store/materials";
 import type { TipoCarga } from "./store/characters";
 import type { Estacao } from "./store/layout";
@@ -87,6 +88,14 @@ export interface GameHandle {
    * cuspiria um "+R$" fantasma na cara do jogador.
    */
   ressincronizar(): void;
+  /**
+   * O jogador está perto o bastante para mandar o bêbado sair?
+   *
+   * Fica na cena, e não no núcleo, porque a conta é de POSIÇÃO — mesma razão
+   * pela qual a estação é medida por distância ao móvel (FASE3 §5.3). O núcleo
+   * não sabe onde ninguém está.
+   */
+  bebadoAoAlcance(): boolean;
   setMobileMovement(x: number, z: number): void;
   dispose(): void;
 }
@@ -197,6 +206,7 @@ export async function createGameScene(
 
   const equipe = criarEquipe(pessoas, world);
   const mentor = criarMentor(pessoas);
+  const bebado = criarBebado(pessoas);
   const jogador = criarJogador(pessoas, (estacao) => loja.destacarZona(estacao));
 
   // O que o atendente tem nos braços. É a mesma informação que o GameCanvas usa
@@ -279,12 +289,19 @@ export async function createGameScene(
       equipe.atualizar(dt);
       // O Seu Zé não é equipe: quem diz se ele ainda está na loja é o núcleo.
       mentor.atualizar(dt, world.zeEstaNaLoja());
+      bebado.atualizar(dt, world.temBebado());
       loja.atualizarPilhas(estado);
       loja.atualizarBebedouro(estado.nivelDoBebedouro);
       // Nível negativo apaga a estação: enquanto o café não é comprado ele não
       // existe na loja.
       loja.atualizarCafe(estado.upgrades.includes("cafeDaEspera") ? estado.nivelDoCafe : -1);
       loja.animar(dt);
+    },
+
+    bebadoAoAlcance() {
+      const onde = bebado.posicao();
+      if (!onde) return false;
+      return Math.hypot(jogador.posicao.x - onde.x, jogador.posicao.z - onde.z) <= world.alcanceDoBebado();
     },
 
     ressincronizar() {
@@ -369,6 +386,7 @@ export async function createGameScene(
       multidao.dispose();
       equipe.dispose();
       mentor.dispose();
+      bebado.dispose();
       scene.dispose();
       if (gameWorld === world) {
         gameWorld = null;

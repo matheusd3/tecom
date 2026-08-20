@@ -42,6 +42,8 @@ interface Instantaneo {
   mapAction: ActionResult | null;
   /** O que o Seu Zé tem a dizer agora, se estiver na loja e vier ao caso. */
   passoTutorial: { id: TutorialPassoId; fala: string[] } | null;
+  /** Blogueira esperando resposta sobre o conserto de graça. */
+  blogueira: { nome: string; historia: string } | null;
 }
 
 /**
@@ -139,6 +141,7 @@ export default function GameCanvas() {
     capacidade: 1,
     mapAction: null,
     passoTutorial: null,
+    blogueira: null,
   });
   const [capacidades, setCapacidades] = useState<Capacidades>({
     iniciarTurno: false,
@@ -186,6 +189,10 @@ export default function GameCanvas() {
       capacidade: world.capacidadeDeCarga(),
       mapAction: mapActionRef.current,
       passoTutorial: world.passoDoTutorial() ?? null,
+      blogueira: (() => {
+        const nina = world.blogueiraNoBalcao();
+        return nina ? { nome: nina.name, historia: nina.story } : null;
+      })(),
     });
     // Se o cliente desistiu enquanto o desconto esperava resposta, o pedido
     // morre com ele — senão o botão fecharia uma venda com quem já saiu.
@@ -204,6 +211,14 @@ export default function GameCanvas() {
     const state = world.getState();
     if (turnoPausado(world)) {
       mapActionRef.current = TURNO_PAUSADO();
+      sincronizar();
+      return;
+    }
+    // O bêbado vem antes de qualquer estação: se o jogador atravessou a loja
+    // até ele, é isso que a tecla tem de resolver. Deixar a estação ganhar
+    // faria o E "não funcionar" bem no momento em que ele mais parece óbvio.
+    if (handle.bebadoAoAlcance()) {
+      mapActionRef.current = world.expulsarBebado();
       sincronizar();
       return;
     }
@@ -797,6 +812,16 @@ export default function GameCanvas() {
     sincronizar();
   }, [sincronizar]);
 
+  const aceitarBlogueira = useCallback(() => {
+    mapActionRef.current = worldRef.current?.aceitarBlogueira() ?? null;
+    sincronizar();
+  }, [sincronizar]);
+
+  const recusarBlogueira = useCallback(() => {
+    mapActionRef.current = worldRef.current?.recusarBlogueira() ?? null;
+    sincronizar();
+  }, [sincronizar]);
+
   const aceitarOferta = useCallback(() => {
     worldRef.current?.aceitarOfertaDoFilho();
     sincronizar();
@@ -894,6 +919,9 @@ export default function GameCanvas() {
           passoTutorial={instantaneo.passoTutorial}
           onEntendiPasso={entendiOPasso}
           onPularTutorial={pularTutorial}
+          blogueira={instantaneo.blogueira}
+          onAceitarBlogueira={aceitarBlogueira}
+          onRecusarBlogueira={recusarBlogueira}
           onAceitarOferta={aceitarOferta}
           onRecusarOferta={recusarOferta}
           resumoSave={resumoSave}
